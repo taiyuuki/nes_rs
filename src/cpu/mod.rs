@@ -805,7 +805,7 @@ impl CPU {
 
         // 假如分支跳转到当前位置前2个字节会造成空循环，因此跳过这次执行。
         if self.idle {
-            return ();
+            return;
         }
         let inst_byte = bus.cpu_read(self.pc);
         self.pc += 1;
