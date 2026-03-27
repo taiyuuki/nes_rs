@@ -419,6 +419,13 @@ pub struct CPU {
     // Timing
     cycles: u64,
     clocks: u64,
+    interrupt: u8,
+    interrupt_delay: bool,
+    pre_interrupt_delay: bool,
+    idle: bool,
+    nmi: bool,
+    nmi_prev: bool,
+    nmi_next: bool,
 }
 
 impl CPU {
@@ -432,6 +439,13 @@ impl CPU {
             p: Flag::new(),
             cycles: 0,
             clocks: 0,
+            interrupt: 0,
+            interrupt_delay: false,
+            pre_interrupt_delay: false,
+            idle: false,
+            nmi: false,
+            nmi_prev: false,
+            nmi_next: false,
         }
     }
 
@@ -655,6 +669,8 @@ impl CPU {
                 self.jsr(operand.addr, bus);
             }
             OpCode::RTS => self.rts(bus),
+            OpCode::BRK => self.brk(bus),
+            OpCode::RTI => self.rti(bus),
             // Flags
             OpCode::CLC => self.clc(),
             OpCode::SEC => self.sec(),
@@ -748,10 +764,51 @@ impl CPU {
     }
 
     pub fn cpu_step(&mut self, bus: &mut impl CPUBus) {
+        bus.cpu_read(0x4000); // 同步APU，暂时无用，但提前写好
+        self.clocks += 1;
+        self.cycles -= 1;
+
+        // 周期倒计时
+        if self.cycles > 0 {
+            return ();
+        }
+
+        if self.nmi_next {
+            self.nmi_interrupt(bus);
+            self.nmi_next = false;
+        }
+
+        // nmi上升时触发
+        if self.nmi && self.nmi_prev {
+            self.nmi_next = true;
+        }
+        self.nmi_prev = self.nmi;
+
+        if self.interrupt > 0 {
+            if self.interrupt_delay {
+                self.interrupt_delay = false;
+                if !self.pre_interrupt_delay {
+                    self.irq_interrupt(bus);
+                    return ();
+                }
+            } else {
+                self.irq_interrupt(bus);
+            }
+        } else {
+            self.interrupt_delay = false;
+        }
+
+        // 假如分支跳转到当前位置前2个字节会造成空循环，因此跳过这次执行。
+        if self.idle {
+            return ();
+        }
         let inst_byte = bus.cpu_read(self.pc);
         self.pc += 1;
-        self.clocks += 1;
         self.exe_inst(inst_byte, bus);
+    }
+
+    pub fn set_nmi(&mut self, nmi: bool) {
+        self.nmi = nmi;
     }
 
     fn stack_push(&mut self, val: u8, bus: &mut impl CPUBus) {
@@ -909,6 +966,9 @@ impl CPU {
 
     // 直接跳到目标地址
     fn jmp(&mut self, addr: u16) {
+        if self.pc == addr - 1 {
+            self.idle = true
+        }
         self.pc = addr;
     }
 
@@ -925,6 +985,47 @@ impl CPU {
         let lo = self.stack_pop(bus) as u16;
         let hi = self.stack_pop(bus) as u16;
         self.pc = ((hi << 8) | lo).wrapping_add(1);
+    }
+
+    fn brk(&mut self, bus: &mut impl CPUBus) {
+        self.pc = self.pc.wrapping_add(1);
+        self.stack_push((self.pc >> 8) as u8, bus);
+        self.stack_push(self.pc as u8, bus);
+        self.stack_push(self.status_byte_for_push(true), bus);
+        self.p.i = true;
+        self.pc = bus.cpu_read_u16(0xFFFE);
+    }
+
+    fn rti(&mut self, bus: &mut impl CPUBus) {
+        let val = self.stack_pop(bus);
+        self.set_byte_to_p(val);
+        let lo = self.stack_pop(bus) as u16;
+        let hi = (self.stack_pop(bus) as u16) << 8;
+        self.pc = lo | hi;
+    }
+
+    fn nmi_interrupt(&mut self, bus: &mut impl CPUBus) {
+        self.idle = false;
+        self.stack_push((self.pc >> 8) as u8, bus);
+        self.stack_push(self.pc as u8, bus);
+        let p = self.status_byte_for_push(true) & !0x10;
+        self.stack_push(p, bus);
+        self.p.i = true;
+        self.pc = bus.cpu_read_u16(0xFFFA);
+    }
+
+    fn irq_interrupt(&mut self, bus: &mut impl CPUBus) {
+        self.idle = false;
+        self.stack_push((self.pc >> 8) as u8, bus);
+        self.stack_push(self.pc as u8, bus);
+        let p = self.status_byte_for_push(true) & !0x10;
+        self.stack_push(p, bus);
+        self.p.i = true;
+        self.pc = bus.cpu_read_u16(0xFFFE);
+    }
+
+    fn delay_interrupt(&mut self) {
+        self.interrupt_delay = true;
     }
 
     fn clc(&mut self) {
@@ -1004,76 +1105,48 @@ impl CPU {
         self.cmp_core(self.y, data);
     }
 
-    fn beq(&mut self, addr: u16) -> u64 {
-        if self.p.z {
+    fn op_branch(&mut self, addr: u16, flag: bool) -> u64 {
+        if flag {
             let old_pc = self.pc;
+            if old_pc - 2 == addr {
+                self.idle = true;
+            }
             self.pc = addr;
             return 1 + u64::from(Self::page_crossed(old_pc, addr));
         }
         0
+    }
+
+    fn beq(&mut self, addr: u16) -> u64 {
+        self.op_branch(addr, self.p.z)
     }
 
     fn bne(&mut self, addr: u16) -> u64 {
-        if !self.p.z {
-            let old_pc = self.pc;
-            self.pc = addr;
-            return 1 + u64::from(Self::page_crossed(old_pc, addr));
-        }
-        0
+        self.op_branch(addr, !self.p.z)
     }
 
     fn bcs(&mut self, addr: u16) -> u64 {
-        if self.p.c {
-            let old_pc = self.pc;
-            self.pc = addr;
-            return 1 + u64::from(Self::page_crossed(old_pc, addr));
-        }
-        0
+        self.op_branch(addr, self.p.c)
     }
 
     fn bcc(&mut self, addr: u16) -> u64 {
-        if !self.p.c {
-            let old_pc = self.pc;
-            self.pc = addr;
-            return 1 + u64::from(Self::page_crossed(old_pc, addr));
-        }
-        0
+        self.op_branch(addr, !self.p.c)
     }
 
     fn bmi(&mut self, addr: u16) -> u64 {
-        if self.p.n {
-            let old_pc = self.pc;
-            self.pc = addr;
-            return 1 + u64::from(Self::page_crossed(old_pc, addr));
-        }
-        0
+        self.op_branch(addr, self.p.n)
     }
 
     fn bpl(&mut self, addr: u16) -> u64 {
-        if !self.p.n {
-            let old_pc = self.pc;
-            self.pc = addr;
-            return 1 + u64::from(Self::page_crossed(old_pc, addr));
-        }
-        0
+        self.op_branch(addr, !self.p.n)
     }
 
     fn bvs(&mut self, addr: u16) -> u64 {
-        if self.p.v {
-            let old_pc = self.pc;
-            self.pc = addr;
-            return 1 + u64::from(Self::page_crossed(old_pc, addr));
-        }
-        0
+        self.op_branch(addr, self.p.v)
     }
 
     fn bvc(&mut self, addr: u16) -> u64 {
-        if !self.p.v {
-            let old_pc = self.pc;
-            self.pc = addr;
-            return 1 + u64::from(Self::page_crossed(old_pc, addr));
-        }
-        0
+        self.op_branch(addr, !self.p.v)
     }
 
     fn adc(&mut self, addr: u16, bus: &mut impl CPUBus) {

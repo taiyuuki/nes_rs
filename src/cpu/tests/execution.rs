@@ -20,6 +20,64 @@ fn cpu_step_executes_ora_immediate_and_updates_flags_and_timing() {
 }
 
 #[test]
+fn cpu_step_executes_bit_zero_page_and_clears_zero_when_a_and_m_is_non_zero() {
+    let mut cpu = CPU::new();
+    let mut bus = TestBus::new();
+    cpu.pc = 0x0200;
+    cpu.a = 0b0000_0001;
+    cpu.p.z = true;
+    bus.cpu_write(0x0200, 0x24);
+    bus.cpu_write(0x0201, 0x10);
+    bus.cpu_write(0x0010, 0b0000_0001);
+
+    cpu.cpu_step(&mut bus);
+
+    assert!(!cpu.p.z, "A & M != 0 should clear zero");
+    assert_eq!(cpu.pc, 0x0202);
+    assert_eq!(cpu.cycles, 3);
+    assert_eq!(cpu.a, 0b0000_0001);
+}
+
+#[test]
+fn cpu_step_executes_bit_zero_page_and_sets_zero_when_a_and_m_is_zero() {
+    let mut cpu = CPU::new();
+    let mut bus = TestBus::new();
+    cpu.pc = 0x0200;
+    cpu.a = 0b0000_0001;
+    cpu.p.z = false;
+    bus.cpu_write(0x0200, 0x24);
+    bus.cpu_write(0x0201, 0x10);
+    bus.cpu_write(0x0010, 0b0000_0010);
+
+    cpu.cpu_step(&mut bus);
+
+    assert!(cpu.p.z, "A & M == 0 should set zero");
+    assert_eq!(cpu.pc, 0x0202);
+    assert_eq!(cpu.cycles, 3);
+    assert_eq!(cpu.a, 0b0000_0001);
+}
+
+#[test]
+fn cpu_step_executes_bit_absolute_and_sets_negative_and_overflow_from_memory_bits() {
+    let mut cpu = CPU::new();
+    let mut bus = TestBus::new();
+    cpu.pc = 0x0200;
+    cpu.a = 0xFF;
+    cpu.p.n = false;
+    cpu.p.v = false;
+    bus.cpu_write(0x0200, 0x2C);
+    bus.write_u16(0x0201, 0x1234);
+    bus.cpu_write(0x1234, 0b1100_0000);
+
+    cpu.cpu_step(&mut bus);
+
+    assert!(cpu.p.n, "memory bit7 should set negative");
+    assert!(cpu.p.v, "memory bit6 should set overflow");
+    assert_eq!(cpu.pc, 0x0203);
+    assert_eq!(cpu.cycles, 4);
+}
+
+#[test]
 fn cpu_step_executes_lda_immediate_and_sets_zero_flag() {
     let mut cpu = CPU::new();
     let mut bus = TestBus::new();
@@ -437,7 +495,10 @@ fn cpu_step_executes_adc_immediate_and_sets_overflow_for_signed_addition() {
     assert!(!cpu.p.c, "0x50 + 0x50 should not set carry");
     assert!(!cpu.p.z);
     assert!(cpu.p.n, "0xA0 should set negative");
-    assert!(cpu.p.v, "positive + positive -> negative should set overflow");
+    assert!(
+        cpu.p.v,
+        "positive + positive -> negative should set overflow"
+    );
     assert_eq!(cpu.cycles, 2);
 }
 
@@ -517,7 +578,10 @@ fn cpu_step_executes_sbc_immediate_and_sets_overflow_for_signed_subtraction() {
     assert!(cpu.p.c);
     assert!(!cpu.p.z);
     assert!(!cpu.p.n);
-    assert!(cpu.p.v, "negative - positive -> positive should set overflow");
+    assert!(
+        cpu.p.v,
+        "negative - positive -> positive should set overflow"
+    );
     assert_eq!(cpu.cycles, 2);
 }
 
@@ -652,6 +716,105 @@ fn cpu_step_executes_rts_and_restores_pc_from_stack() {
     assert_eq!(cpu.sp, 0xFD);
     assert_eq!(cpu.cycles, 6);
     assert_eq!(cpu.clocks, 1);
+}
+
+#[test]
+fn cpu_step_executes_brk_and_pushes_pc_and_status_then_jumps_to_irq_vector() {
+    let mut cpu = CPU::new();
+    let mut bus = TestBus::new();
+    cpu.pc = 0x12FE;
+    cpu.sp = 0xFD;
+    cpu.p.c = true;
+    cpu.p.z = false;
+    cpu.p.i = false;
+    cpu.p.v = true;
+    cpu.p.n = false;
+    bus.cpu_write(0x12FE, 0x00);
+    bus.cpu_write(0x12FF, 0xAA);
+    bus.write_u16(0xFFFE, 0x3456);
+
+    cpu.cpu_step(&mut bus);
+
+    assert_eq!(cpu.pc, 0x3456);
+    assert_eq!(cpu.sp, 0xFA);
+    assert_eq!(bus.cpu_read(0x01FD), 0x13, "BRK should push PC high of 0x1300");
+    assert_eq!(bus.cpu_read(0x01FC), 0x00, "BRK should push PC low of 0x1300");
+    assert_eq!(
+        bus.cpu_read(0x01FB),
+        0x71,
+        "BRK push should set break and unused bits"
+    );
+    assert!(cpu.p.i, "BRK should set interrupt disable");
+    assert_eq!(cpu.cycles, 7);
+    assert_eq!(cpu.clocks, 1);
+}
+
+#[test]
+fn cpu_step_executes_rti_and_restores_status_and_program_counter_from_stack() {
+    let mut cpu = CPU::new();
+    let mut bus = TestBus::new();
+    cpu.pc = 0x0200;
+    cpu.sp = 0xFA;
+    cpu.p.c = false;
+    cpu.p.z = true;
+    cpu.p.i = false;
+    cpu.p.v = false;
+    cpu.p.n = true;
+    bus.cpu_write(0x0200, 0x40);
+    bus.cpu_write(0x01FB, 0x75);
+    bus.cpu_write(0x01FC, 0x34);
+    bus.cpu_write(0x01FD, 0x12);
+
+    cpu.cpu_step(&mut bus);
+
+    assert_eq!(cpu.pc, 0x1234);
+    assert_eq!(cpu.sp, 0xFD);
+    assert!(cpu.p.c);
+    assert!(!cpu.p.z);
+    assert!(cpu.p.i);
+    assert!(cpu.p.v);
+    assert!(!cpu.p.n);
+    assert_eq!(cpu.cycles, 6);
+    assert_eq!(cpu.clocks, 1);
+}
+
+#[test]
+fn cpu_step_executes_brk_then_rti_and_restores_pc_plus_two_and_flags() {
+    let mut cpu = CPU::new();
+    let mut bus = TestBus::new();
+    cpu.pc = 0x12FE;
+    cpu.sp = 0xFD;
+    cpu.p.c = true;
+    cpu.p.z = false;
+    cpu.p.i = false;
+    cpu.p.v = true;
+    cpu.p.n = true;
+    bus.cpu_write(0x12FE, 0x00);
+    bus.write_u16(0xFFFE, 0x4000);
+    bus.cpu_write(0x4000, 0x40);
+
+    cpu.cpu_step(&mut bus);
+    assert_eq!(cpu.pc, 0x4000);
+    assert_eq!(cpu.sp, 0xFA);
+    assert!(cpu.p.i, "BRK should set interrupt disable");
+
+    cpu.p.c = false;
+    cpu.p.z = true;
+    cpu.p.i = true;
+    cpu.p.v = false;
+    cpu.p.n = false;
+
+    cpu.cpu_step(&mut bus);
+
+    assert_eq!(cpu.pc, 0x1300, "RTI should restore PC pushed by BRK (PC + 2)");
+    assert_eq!(cpu.sp, 0xFD);
+    assert!(cpu.p.c);
+    assert!(!cpu.p.z);
+    assert!(!cpu.p.i);
+    assert!(cpu.p.v);
+    assert!(cpu.p.n);
+    assert_eq!(cpu.cycles, 13);
+    assert_eq!(cpu.clocks, 2);
 }
 
 #[test]
