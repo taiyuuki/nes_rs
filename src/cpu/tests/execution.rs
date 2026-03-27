@@ -188,6 +188,20 @@ fn cpu_step_executes_php_and_pushes_status_with_break_and_unused_bits_set() {
 }
 
 #[test]
+fn cpu_step_executes_php_and_includes_decimal_flag_in_pushed_status() {
+    let mut cpu = CPU::new();
+    let mut bus = TestBus::new();
+    cpu.pc = 0x0200;
+    cpu.sp = 0xFD;
+    cpu.p.d = true;
+    bus.cpu_write(0x0200, 0x08);
+
+    cpu.cpu_clock(&mut bus);
+
+    assert_eq!(bus.cpu_read(0x01FD), 0x38);
+}
+
+#[test]
 fn cpu_step_executes_plp_and_restores_status_flags_from_stack() {
     let mut cpu = CPU::new();
     let mut bus = TestBus::new();
@@ -215,6 +229,21 @@ fn cpu_step_executes_plp_and_restores_status_flags_from_stack() {
 }
 
 #[test]
+fn cpu_step_executes_plp_and_restores_decimal_flag() {
+    let mut cpu = CPU::new();
+    let mut bus = TestBus::new();
+    cpu.pc = 0x0200;
+    cpu.sp = 0xFC;
+    cpu.p.d = false;
+    bus.cpu_write(0x0200, 0x28);
+    bus.cpu_write(0x01FD, 0x08);
+
+    cpu.cpu_clock(&mut bus);
+
+    assert!(cpu.p.d);
+}
+
+#[test]
 fn cpu_step_executes_plp_and_ignores_break_and_unused_bits() {
     let mut cpu = CPU::new();
     let mut bus = TestBus::new();
@@ -237,6 +266,27 @@ fn cpu_step_executes_plp_and_ignores_break_and_unused_bits() {
     assert!(!cpu.p.n);
     assert_eq!(cpu.sp, 0xFD);
     assert_eq!(cpu.pc, 0x0201);
+}
+
+#[test]
+fn cpu_step_executes_sed_and_cld_and_updates_decimal_flag() {
+    let mut cpu = CPU::new();
+    let mut bus = TestBus::new();
+    cpu.pc = 0x0200;
+    cpu.p.d = false;
+    bus.cpu_write(0x0200, 0xF8); // SED
+    bus.cpu_write(0x0201, 0xD8); // CLD
+
+    cpu.cpu_clock(&mut bus);
+    assert!(cpu.p.d);
+    assert_eq!(cpu.pc, 0x0201);
+    assert_eq!(cpu.cycles, 2);
+
+    cpu.cpu_clock(&mut bus);
+    cpu.cpu_clock(&mut bus);
+    assert!(!cpu.p.d);
+    assert_eq!(cpu.pc, 0x0202);
+    assert_eq!(cpu.cycles, 2);
 }
 
 #[test]
@@ -755,6 +805,21 @@ fn cpu_step_executes_brk_and_pushes_pc_and_status_then_jumps_to_irq_vector() {
     assert!(cpu.p.i, "BRK should set interrupt disable");
     assert_eq!(cpu.cycles, 7);
     assert_eq!(cpu.clocks, 1);
+}
+
+#[test]
+fn cpu_step_executes_brk_and_pushes_decimal_flag_in_status() {
+    let mut cpu = CPU::new();
+    let mut bus = TestBus::new();
+    cpu.pc = 0x0200;
+    cpu.sp = 0xFD;
+    cpu.p.d = true;
+    bus.cpu_write(0x0200, 0x00);
+    bus.write_u16(0xFFFE, 0x3456);
+
+    cpu.cpu_clock(&mut bus);
+
+    assert_eq!(bus.cpu_read(0x01FB), 0x38);
 }
 
 #[test]

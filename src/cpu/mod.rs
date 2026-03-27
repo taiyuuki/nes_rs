@@ -392,6 +392,7 @@ struct Flag {
     c: bool, // Carry
     z: bool, // Zero
     i: bool, // Interrutps Disable
+    d: bool, // Decimal
     v: bool, // Overflow
     n: bool, // Nagative
 }
@@ -402,6 +403,7 @@ impl Flag {
             c: false,
             z: false,
             i: false,
+            d: false,
             v: false,
             n: false,
         }
@@ -427,7 +429,6 @@ pub struct CPU {
     nmi: bool,
     nmi_prev: bool,
     nmi_next: bool,
-    idle: bool,
 }
 
 impl CPU {
@@ -444,7 +445,6 @@ impl CPU {
             interrupt: 0,
             interrupt_delay: false,
             pre_interrupt_delay: false,
-            idle: false,
             nmi: false,
             nmi_prev: false,
             nmi_next: false,
@@ -453,10 +453,12 @@ impl CPU {
 
     pub fn reset(&mut self, bus: &mut impl CPUBus) {
         self.pc = self.reset_vector(bus);
-
-        self.sp -= 3;
-        self.sp &= 0xFF;
+        self.sp = self.sp.wrapping_sub(3);
         self.p.i = true;
+        self.interrupt_delay = false;
+        self.pre_interrupt_delay = false;
+        self.nmi_next = false;
+        self.nmi_prev = self.nmi;
     }
 
     fn reset_vector(&mut self, bus: &mut impl CPUBus) -> u16 {
@@ -472,16 +474,18 @@ impl CPU {
         let c: u8 = if self.p.c { 0x01 } else { 0 };
         let z: u8 = if self.p.z { 0x02 } else { 0 };
         let i: u8 = if self.p.i { 0x04 } else { 0 };
+        let d: u8 = if self.p.d { 0x08 } else { 0 };
         let b: u8 = if break_flag { 0x10 } else { 0 };
         let v: u8 = if self.p.v { 0x40 } else { 0 };
         let n: u8 = if self.p.n { 0x80 } else { 0 };
-        c | z | i | b | v | n | 0x20
+        c | z | i | d | b | v | n | 0x20
     }
 
     fn set_byte_to_p(&mut self, val: u8) {
         self.p.c = (val & 0x01) != 0;
         self.p.z = (val & 0x02) != 0;
         self.p.i = (val & 0x04) != 0;
+        self.p.d = (val & 0x08) != 0;
         // Bit 4 (B) and bit 5 are artifacts of how the status is pushed.
         self.p.v = (val & 0x40) != 0;
         self.p.n = (val & 0x80) != 0;
@@ -807,10 +811,6 @@ impl CPU {
             self.interrupt_delay = false;
         }
 
-        // 假如分支跳转到当前位置前2个字节会造成空循环，因此跳过这次执行。
-        if self.idle {
-            return;
-        }
         let inst_byte = bus.cpu_read(self.pc);
         self.pc = self.pc.wrapping_add(1);
         self.exe_inst(inst_byte, bus);
@@ -845,7 +845,6 @@ impl CPU {
     }
 
     fn nmi_interrupt(&mut self, bus: &mut impl CPUBus) {
-        self.idle = false;
         self.stack_push((self.pc >> 8) as u8, bus);
         self.stack_push(self.pc as u8, bus);
         let p = self.status_byte_for_push(true) & !0x10;
@@ -855,7 +854,6 @@ impl CPU {
     }
 
     fn irq_interrupt(&mut self, bus: &mut impl CPUBus) {
-        self.idle = false;
         self.stack_push((self.pc >> 8) as u8, bus);
         self.stack_push(self.pc as u8, bus);
         let p = self.status_byte_for_push(true) & !0x10;
@@ -1024,9 +1022,6 @@ impl CPU {
 
     // 直接跳到目标地址
     fn jmp(&mut self, addr: u16) {
-        if self.pc == addr.wrapping_sub(1) {
-            self.idle = true
-        }
         self.pc = addr;
     }
 
@@ -1083,11 +1078,11 @@ impl CPU {
     }
 
     fn cld(&mut self) {
-        // Invalid in 2A03
+        self.p.d = false;
     }
 
     fn sed(&mut self) {
-        // Invalid in 2A03
+        self.p.d = true;
     }
 
     fn clv(&mut self) {
@@ -1148,9 +1143,6 @@ impl CPU {
     fn op_branch(&mut self, addr: u16, flag: bool) -> u64 {
         if flag {
             let old_pc = self.pc;
-            if old_pc.wrapping_sub(2) == addr {
-                self.idle = true;
-            }
             self.pc = addr;
             return 1 + u64::from(Self::page_crossed(old_pc, addr));
         }
