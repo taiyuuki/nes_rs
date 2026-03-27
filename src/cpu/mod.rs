@@ -419,13 +419,15 @@ pub struct CPU {
     // Timing
     cycles: u64,
     clocks: u64,
+
+    // interrupt
     interrupt: u8,
     interrupt_delay: bool,
     pre_interrupt_delay: bool,
-    idle: bool,
     nmi: bool,
     nmi_prev: bool,
     nmi_next: bool,
+    idle: bool,
 }
 
 impl CPU {
@@ -766,11 +768,11 @@ impl CPU {
     pub fn cpu_step(&mut self, bus: &mut impl CPUBus) {
         bus.cpu_read(0x4000); // 同步APU，暂时无用，但提前写好
         self.clocks += 1;
-        self.cycles -= 1;
 
         // 周期倒计时
+        self.cycles -= 1;
         if self.cycles > 0 {
-            return ();
+            return;
         }
 
         if self.nmi_next {
@@ -779,7 +781,7 @@ impl CPU {
         }
 
         // nmi上升时触发
-        if self.nmi && self.nmi_prev {
+        if self.nmi && !self.nmi_prev {
             self.nmi_next = true;
         }
         self.nmi_prev = self.nmi;
@@ -789,10 +791,13 @@ impl CPU {
                 self.interrupt_delay = false;
                 if !self.pre_interrupt_delay {
                     self.irq_interrupt(bus);
-                    return ();
+                    self.cycles += 7;
+                    return;
                 }
-            } else {
+            } else if !self.p.i {
                 self.irq_interrupt(bus);
+                self.cycles += 7;
+                return;
             }
         } else {
             self.interrupt_delay = false;
@@ -809,6 +814,30 @@ impl CPU {
 
     pub fn set_nmi(&mut self, nmi: bool) {
         self.nmi = nmi;
+    }
+
+    fn nmi_interrupt(&mut self, bus: &mut impl CPUBus) {
+        self.idle = false;
+        self.stack_push((self.pc >> 8) as u8, bus);
+        self.stack_push(self.pc as u8, bus);
+        let p = self.status_byte_for_push(true) & !0x10;
+        self.stack_push(p, bus);
+        self.p.i = true;
+        self.pc = bus.cpu_read_u16(0xFFFA);
+    }
+
+    fn irq_interrupt(&mut self, bus: &mut impl CPUBus) {
+        self.idle = false;
+        self.stack_push((self.pc >> 8) as u8, bus);
+        self.stack_push(self.pc as u8, bus);
+        let p = self.status_byte_for_push(true) & !0x10;
+        self.stack_push(p, bus);
+        self.p.i = true;
+        self.pc = bus.cpu_read_u16(0xFFFE);
+    }
+
+    fn delay_interrupt(&mut self) {
+        self.interrupt_delay = true;
     }
 
     fn stack_push(&mut self, val: u8, bus: &mut impl CPUBus) {
@@ -1004,30 +1033,6 @@ impl CPU {
         self.pc = lo | hi;
     }
 
-    fn nmi_interrupt(&mut self, bus: &mut impl CPUBus) {
-        self.idle = false;
-        self.stack_push((self.pc >> 8) as u8, bus);
-        self.stack_push(self.pc as u8, bus);
-        let p = self.status_byte_for_push(true) & !0x10;
-        self.stack_push(p, bus);
-        self.p.i = true;
-        self.pc = bus.cpu_read_u16(0xFFFA);
-    }
-
-    fn irq_interrupt(&mut self, bus: &mut impl CPUBus) {
-        self.idle = false;
-        self.stack_push((self.pc >> 8) as u8, bus);
-        self.stack_push(self.pc as u8, bus);
-        let p = self.status_byte_for_push(true) & !0x10;
-        self.stack_push(p, bus);
-        self.p.i = true;
-        self.pc = bus.cpu_read_u16(0xFFFE);
-    }
-
-    fn delay_interrupt(&mut self) {
-        self.interrupt_delay = true;
-    }
-
     fn clc(&mut self) {
         self.p.c = false;
     }
@@ -1037,10 +1042,12 @@ impl CPU {
     }
 
     fn cli(&mut self) {
+        self.delay_interrupt();
         self.p.i = false;
     }
 
     fn sei(&mut self) {
+        self.delay_interrupt();
         self.p.i = true;
     }
 
@@ -1071,6 +1078,7 @@ impl CPU {
     }
 
     fn plp(&mut self, bus: &mut impl CPUBus) {
+        self.delay_interrupt();
         let val = self.stack_pop(bus);
         self.set_byte_to_p(val);
     }
