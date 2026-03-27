@@ -765,26 +765,30 @@ impl CPU {
         self.cycles += inst.2 as u64 + extra_cycles;
     }
 
-    pub fn cpu_step(&mut self, bus: &mut impl CPUBus) {
+    pub fn cpu_clock(&mut self, bus: &mut impl CPUBus) {
         bus.cpu_read(0x4000); // 同步APU，暂时无用，但提前写好
         self.clocks += 1;
 
+        // Latch NMI edge every CPU clock.
+        if self.nmi && !self.nmi_prev {
+            self.nmi_next = true;
+        }
+        self.nmi_prev = self.nmi;
+
         // 周期倒计时
-        self.cycles -= 1;
         if self.cycles > 0 {
-            return;
+            self.cycles -= 1;
+            if self.cycles > 0 {
+                return;
+            }
         }
 
         if self.nmi_next {
             self.nmi_interrupt(bus);
             self.nmi_next = false;
+            self.cycles += 7;
+            return;
         }
-
-        // nmi上升时触发
-        if self.nmi && !self.nmi_prev {
-            self.nmi_next = true;
-        }
-        self.nmi_prev = self.nmi;
 
         if self.interrupt > 0 {
             if self.interrupt_delay {
@@ -808,12 +812,36 @@ impl CPU {
             return;
         }
         let inst_byte = bus.cpu_read(self.pc);
-        self.pc += 1;
+        self.pc = self.pc.wrapping_add(1);
         self.exe_inst(inst_byte, bus);
     }
 
     pub fn set_nmi(&mut self, nmi: bool) {
         self.nmi = nmi;
+    }
+
+    pub fn set_irq(&mut self, irq: bool) {
+        self.interrupt = u8::from(irq);
+    }
+
+    pub fn irq_raise(&mut self, mask: u8) {
+        self.interrupt |= mask;
+    }
+
+    pub fn irq_clear(&mut self, mask: u8) {
+        self.interrupt &= !mask;
+    }
+
+    pub fn irq_set_level(&mut self, mask: u8, active: bool) {
+        if active {
+            self.irq_raise(mask)
+        } else {
+            self.irq_clear(mask)
+        }
+    }
+
+    pub fn irq_pending(&self) -> bool {
+        self.interrupt != 0
     }
 
     fn nmi_interrupt(&mut self, bus: &mut impl CPUBus) {
@@ -836,8 +864,9 @@ impl CPU {
         self.pc = bus.cpu_read_u16(0xFFFE);
     }
 
-    fn delay_interrupt(&mut self) {
+    fn delay_interrupt(&mut self, previous_i: bool) {
         self.interrupt_delay = true;
+        self.pre_interrupt_delay = previous_i;
     }
 
     fn stack_push(&mut self, val: u8, bus: &mut impl CPUBus) {
@@ -995,7 +1024,7 @@ impl CPU {
 
     // 直接跳到目标地址
     fn jmp(&mut self, addr: u16) {
-        if self.pc == addr - 1 {
+        if self.pc == addr.wrapping_sub(1) {
             self.idle = true
         }
         self.pc = addr;
@@ -1042,13 +1071,15 @@ impl CPU {
     }
 
     fn cli(&mut self) {
-        self.delay_interrupt();
+        let old_i = self.p.i;
         self.p.i = false;
+        self.delay_interrupt(old_i);
     }
 
     fn sei(&mut self) {
-        self.delay_interrupt();
+        let old_i = self.p.i;
         self.p.i = true;
+        self.delay_interrupt(old_i);
     }
 
     fn cld(&mut self) {
@@ -1078,9 +1109,10 @@ impl CPU {
     }
 
     fn plp(&mut self, bus: &mut impl CPUBus) {
-        self.delay_interrupt();
+        let old_i = self.p.i;
         let val = self.stack_pop(bus);
         self.set_byte_to_p(val);
+        self.delay_interrupt(old_i);
     }
 
     fn txs(&mut self) {
@@ -1116,7 +1148,7 @@ impl CPU {
     fn op_branch(&mut self, addr: u16, flag: bool) -> u64 {
         if flag {
             let old_pc = self.pc;
-            if old_pc - 2 == addr {
+            if old_pc.wrapping_sub(2) == addr {
                 self.idle = true;
             }
             self.pc = addr;
