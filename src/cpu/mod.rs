@@ -47,14 +47,12 @@ impl AddrMode {
 enum OpCode {
     BRK,
     ORA,
-    XXX,
-    ASO,
+    SLO,
     NOP,
     ASL,
     PHP,
     BPL,
     CLC,
-    NII,
     JSR,
     AND,
     RLA,
@@ -65,7 +63,6 @@ enum OpCode {
     SEC,
     RTI,
     EOR,
-    LSE,
     LSR,
     PHA,
     JMP,
@@ -79,13 +76,12 @@ enum OpCode {
     BVS,
     SEI,
     STA,
-    AXS,
+    SAX,
     STY,
     STX,
     DEY,
     TXA,
     BCC,
-    AXA,
     TYA,
     TXS,
     LDY,
@@ -99,7 +95,7 @@ enum OpCode {
     TSX,
     CPY,
     CMP,
-    DCM,
+    DCP,
     DEC,
     INY,
     DEX,
@@ -107,11 +103,23 @@ enum OpCode {
     CLD,
     CPX,
     SBC,
-    INS,
+    ISC,
     INC,
     INX,
     BEQ,
     SED,
+    ANC,
+    SRE,
+    ALR,
+    ARR,
+    XAA,
+    AXS,
+    AHX,
+    SHX,
+    SHY,
+    TAS,
+    LAS,
+    KIL,
 }
 
 #[derive(Clone, Copy)]
@@ -120,39 +128,39 @@ struct Inst(OpCode, AddrMode, u8); // opcode, addressing mode, cycles
 const INST_SET: [Inst; 256] = [
     Inst(OpCode::BRK, AddrMode::IMP, 7),
     Inst(OpCode::ORA, AddrMode::IZX, 6),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
-    Inst(OpCode::ASO, AddrMode::IZX, 8),
+    Inst(OpCode::KIL, AddrMode::IMP, 2),
+    Inst(OpCode::SLO, AddrMode::IZX, 8),
     Inst(OpCode::NOP, AddrMode::ZP0, 3),
     Inst(OpCode::ORA, AddrMode::ZP0, 3),
     Inst(OpCode::ASL, AddrMode::ZP0, 5),
-    Inst(OpCode::ASO, AddrMode::ZP0, 5),
+    Inst(OpCode::SLO, AddrMode::ZP0, 5),
     Inst(OpCode::PHP, AddrMode::IMP, 3),
     Inst(OpCode::ORA, AddrMode::IMM, 2),
     Inst(OpCode::ASL, AddrMode::IMP, 2),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
+    Inst(OpCode::ANC, AddrMode::IMP, 2),
     Inst(OpCode::NOP, AddrMode::ABS, 4),
     Inst(OpCode::ORA, AddrMode::ABS, 4),
     Inst(OpCode::ASL, AddrMode::ABS, 6),
-    Inst(OpCode::ASO, AddrMode::ABS, 6),
+    Inst(OpCode::SLO, AddrMode::ABS, 6),
     Inst(OpCode::BPL, AddrMode::REL, 2),
     Inst(OpCode::ORA, AddrMode::IZY, 5),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
-    Inst(OpCode::ASO, AddrMode::IZY, 8),
+    Inst(OpCode::KIL, AddrMode::IMP, 2),
+    Inst(OpCode::SLO, AddrMode::IZY, 8),
     Inst(OpCode::NOP, AddrMode::ZPX, 4),
     Inst(OpCode::ORA, AddrMode::ZPX, 4),
     Inst(OpCode::ASL, AddrMode::ZPX, 6),
-    Inst(OpCode::ASO, AddrMode::ZPX, 6),
+    Inst(OpCode::SLO, AddrMode::ZPX, 6),
     Inst(OpCode::CLC, AddrMode::IMP, 2),
     Inst(OpCode::ORA, AddrMode::ABY, 4),
-    Inst(OpCode::NII, AddrMode::IMP, 2),
-    Inst(OpCode::ASO, AddrMode::ABY, 7),
+    Inst(OpCode::NOP, AddrMode::IMP, 2),
+    Inst(OpCode::SLO, AddrMode::ABY, 7),
     Inst(OpCode::NOP, AddrMode::ABX, 4),
     Inst(OpCode::ORA, AddrMode::ABX, 4),
     Inst(OpCode::ASL, AddrMode::ABX, 7),
-    Inst(OpCode::ASO, AddrMode::ABX, 7),
+    Inst(OpCode::SLO, AddrMode::ABX, 7),
     Inst(OpCode::JSR, AddrMode::ABS, 6),
     Inst(OpCode::AND, AddrMode::IZX, 6),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
+    Inst(OpCode::KIL, AddrMode::IMP, 2),
     Inst(OpCode::RLA, AddrMode::IZX, 8),
     Inst(OpCode::BIT, AddrMode::ZP0, 3),
     Inst(OpCode::AND, AddrMode::ZP0, 3),
@@ -161,14 +169,14 @@ const INST_SET: [Inst; 256] = [
     Inst(OpCode::PLP, AddrMode::IMP, 4),
     Inst(OpCode::AND, AddrMode::IMM, 2),
     Inst(OpCode::ROL, AddrMode::IMP, 2),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
+    Inst(OpCode::ANC, AddrMode::IMP, 2),
     Inst(OpCode::BIT, AddrMode::ABS, 4),
     Inst(OpCode::AND, AddrMode::ABS, 4),
     Inst(OpCode::ROL, AddrMode::ABS, 6),
     Inst(OpCode::RLA, AddrMode::ABS, 6),
     Inst(OpCode::BMI, AddrMode::REL, 2),
     Inst(OpCode::AND, AddrMode::IZY, 5),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
+    Inst(OpCode::KIL, AddrMode::IMP, 2),
     Inst(OpCode::RLA, AddrMode::IZY, 8),
     Inst(OpCode::NOP, AddrMode::ZPX, 4),
     Inst(OpCode::AND, AddrMode::ZPX, 4),
@@ -176,7 +184,7 @@ const INST_SET: [Inst; 256] = [
     Inst(OpCode::RLA, AddrMode::ZPX, 6),
     Inst(OpCode::SEC, AddrMode::IMP, 2),
     Inst(OpCode::AND, AddrMode::ABY, 4),
-    Inst(OpCode::NII, AddrMode::IMP, 2),
+    Inst(OpCode::NOP, AddrMode::IMP, 2),
     Inst(OpCode::RLA, AddrMode::ABY, 7),
     Inst(OpCode::NOP, AddrMode::ABX, 4),
     Inst(OpCode::AND, AddrMode::ABX, 4),
@@ -184,39 +192,39 @@ const INST_SET: [Inst; 256] = [
     Inst(OpCode::RLA, AddrMode::ABX, 7),
     Inst(OpCode::RTI, AddrMode::IMP, 6),
     Inst(OpCode::EOR, AddrMode::IZX, 6),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
-    Inst(OpCode::LSE, AddrMode::IZX, 8),
+    Inst(OpCode::KIL, AddrMode::IMP, 2),
+    Inst(OpCode::SRE, AddrMode::IZX, 8),
     Inst(OpCode::NOP, AddrMode::ZP0, 3),
     Inst(OpCode::EOR, AddrMode::ZP0, 3),
     Inst(OpCode::LSR, AddrMode::ZP0, 5),
-    Inst(OpCode::LSE, AddrMode::ZP0, 5),
+    Inst(OpCode::SRE, AddrMode::ZP0, 5),
     Inst(OpCode::PHA, AddrMode::IMP, 3),
     Inst(OpCode::EOR, AddrMode::IMM, 2),
     Inst(OpCode::LSR, AddrMode::IMP, 2),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
+    Inst(OpCode::ALR, AddrMode::IMP, 2),
     Inst(OpCode::JMP, AddrMode::ABS, 3),
     Inst(OpCode::EOR, AddrMode::ABS, 4),
     Inst(OpCode::LSR, AddrMode::ABS, 6),
-    Inst(OpCode::LSE, AddrMode::ABS, 6),
+    Inst(OpCode::SRE, AddrMode::ABS, 6),
     Inst(OpCode::BVC, AddrMode::REL, 2),
     Inst(OpCode::EOR, AddrMode::IZY, 5),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
-    Inst(OpCode::LSE, AddrMode::IZY, 8),
+    Inst(OpCode::KIL, AddrMode::IMP, 2),
+    Inst(OpCode::SRE, AddrMode::IZY, 8),
     Inst(OpCode::NOP, AddrMode::ZPX, 4),
     Inst(OpCode::EOR, AddrMode::ZPX, 4),
     Inst(OpCode::LSR, AddrMode::ZPX, 6),
-    Inst(OpCode::LSE, AddrMode::ZPX, 6),
+    Inst(OpCode::SRE, AddrMode::ZPX, 6),
     Inst(OpCode::CLI, AddrMode::IMP, 2),
     Inst(OpCode::EOR, AddrMode::ABY, 4),
-    Inst(OpCode::NII, AddrMode::IMP, 2),
-    Inst(OpCode::LSE, AddrMode::ABY, 7),
+    Inst(OpCode::NOP, AddrMode::IMP, 2),
+    Inst(OpCode::SRE, AddrMode::ABY, 7),
     Inst(OpCode::NOP, AddrMode::ABX, 4),
     Inst(OpCode::EOR, AddrMode::ABX, 4),
     Inst(OpCode::LSR, AddrMode::ABX, 7),
-    Inst(OpCode::LSE, AddrMode::ABX, 7),
+    Inst(OpCode::SRE, AddrMode::ABX, 7),
     Inst(OpCode::RTS, AddrMode::IMP, 6),
     Inst(OpCode::ADC, AddrMode::IZX, 6),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
+    Inst(OpCode::KIL, AddrMode::IMP, 2),
     Inst(OpCode::RRA, AddrMode::IZX, 8),
     Inst(OpCode::NOP, AddrMode::ZP0, 3),
     Inst(OpCode::ADC, AddrMode::ZP0, 3),
@@ -225,14 +233,14 @@ const INST_SET: [Inst; 256] = [
     Inst(OpCode::PLA, AddrMode::IMP, 4),
     Inst(OpCode::ADC, AddrMode::IMM, 2),
     Inst(OpCode::ROR, AddrMode::IMP, 2),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
+    Inst(OpCode::ARR, AddrMode::IMP, 2),
     Inst(OpCode::JMP, AddrMode::IND, 5),
     Inst(OpCode::ADC, AddrMode::ABS, 4),
     Inst(OpCode::ROR, AddrMode::ABS, 6),
     Inst(OpCode::RRA, AddrMode::ABS, 6),
     Inst(OpCode::BVS, AddrMode::REL, 2),
     Inst(OpCode::ADC, AddrMode::IZY, 5),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
+    Inst(OpCode::KIL, AddrMode::IMP, 2),
     Inst(OpCode::RRA, AddrMode::IZY, 8),
     Inst(OpCode::NOP, AddrMode::ZPX, 4),
     Inst(OpCode::ADC, AddrMode::ZPX, 4),
@@ -240,44 +248,44 @@ const INST_SET: [Inst; 256] = [
     Inst(OpCode::RRA, AddrMode::ZPX, 6),
     Inst(OpCode::SEI, AddrMode::IMP, 2),
     Inst(OpCode::ADC, AddrMode::ABY, 4),
-    Inst(OpCode::NII, AddrMode::IMP, 2),
+    Inst(OpCode::NOP, AddrMode::IMP, 2),
     Inst(OpCode::RRA, AddrMode::ABY, 7),
     Inst(OpCode::NOP, AddrMode::ABX, 4),
     Inst(OpCode::ADC, AddrMode::ABX, 4),
     Inst(OpCode::ROR, AddrMode::ABX, 7),
     Inst(OpCode::RRA, AddrMode::ABX, 7),
-    Inst(OpCode::NII, AddrMode::IMM, 2),
+    Inst(OpCode::NOP, AddrMode::IMM, 2),
     Inst(OpCode::STA, AddrMode::IZX, 6),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
-    Inst(OpCode::AXS, AddrMode::IZX, 6),
+    Inst(OpCode::NOP, AddrMode::IMP, 2),
+    Inst(OpCode::SAX, AddrMode::IZX, 6),
     Inst(OpCode::STY, AddrMode::ZP0, 3),
     Inst(OpCode::STA, AddrMode::ZP0, 3),
     Inst(OpCode::STX, AddrMode::ZP0, 3),
-    Inst(OpCode::AXS, AddrMode::ZP0, 3),
+    Inst(OpCode::SAX, AddrMode::ZP0, 3),
     Inst(OpCode::DEY, AddrMode::IMP, 2),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
+    Inst(OpCode::NOP, AddrMode::IMP, 2),
     Inst(OpCode::TXA, AddrMode::IMP, 2),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
+    Inst(OpCode::XAA, AddrMode::IMP, 2),
     Inst(OpCode::STY, AddrMode::ABS, 4),
     Inst(OpCode::STA, AddrMode::ABS, 4),
     Inst(OpCode::STX, AddrMode::ABS, 4),
-    Inst(OpCode::AXS, AddrMode::ABS, 4),
+    Inst(OpCode::SAX, AddrMode::ABS, 4),
     Inst(OpCode::BCC, AddrMode::REL, 2),
     Inst(OpCode::STA, AddrMode::IZY, 6),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
-    Inst(OpCode::AXA, AddrMode::IZY, 6),
+    Inst(OpCode::KIL, AddrMode::IMP, 2),
+    Inst(OpCode::AHX, AddrMode::IZY, 6),
     Inst(OpCode::STY, AddrMode::ZPX, 4),
     Inst(OpCode::STA, AddrMode::ZPX, 4),
     Inst(OpCode::STX, AddrMode::ZPY, 4),
-    Inst(OpCode::AXS, AddrMode::ZPY, 4),
+    Inst(OpCode::SAX, AddrMode::ZPY, 4),
     Inst(OpCode::TYA, AddrMode::IMP, 2),
     Inst(OpCode::STA, AddrMode::ABY, 5),
     Inst(OpCode::TXS, AddrMode::IMP, 2),
-    Inst(OpCode::AXA, AddrMode::ABY, 5),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
+    Inst(OpCode::TAS, AddrMode::ABY, 5),
+    Inst(OpCode::SHY, AddrMode::IMP, 2),
     Inst(OpCode::STA, AddrMode::ABX, 5),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
+    Inst(OpCode::SHX, AddrMode::IMP, 2),
+    Inst(OpCode::AHX, AddrMode::IMP, 2),
     Inst(OpCode::LDY, AddrMode::IMM, 2),
     Inst(OpCode::LDA, AddrMode::IZX, 6),
     Inst(OpCode::LDX, AddrMode::IMM, 2),
@@ -289,14 +297,14 @@ const INST_SET: [Inst; 256] = [
     Inst(OpCode::TAY, AddrMode::IMP, 2),
     Inst(OpCode::LDA, AddrMode::IMM, 2),
     Inst(OpCode::TAX, AddrMode::IMP, 2),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
+    Inst(OpCode::LAX, AddrMode::IMP, 2),
     Inst(OpCode::LDY, AddrMode::ABS, 4),
     Inst(OpCode::LDA, AddrMode::ABS, 4),
     Inst(OpCode::LDX, AddrMode::ABS, 4),
     Inst(OpCode::LAX, AddrMode::ABS, 4),
     Inst(OpCode::BCS, AddrMode::REL, 2),
     Inst(OpCode::LDA, AddrMode::IZY, 5),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
+    Inst(OpCode::KIL, AddrMode::IMP, 2),
     Inst(OpCode::LAX, AddrMode::IZY, 5),
     Inst(OpCode::LDY, AddrMode::ZPX, 4),
     Inst(OpCode::LDA, AddrMode::ZPX, 4),
@@ -305,75 +313,75 @@ const INST_SET: [Inst; 256] = [
     Inst(OpCode::CLV, AddrMode::IMP, 2),
     Inst(OpCode::LDA, AddrMode::ABY, 4),
     Inst(OpCode::TSX, AddrMode::IMP, 2),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
+    Inst(OpCode::LAS, AddrMode::IMP, 2),
     Inst(OpCode::LDY, AddrMode::ABX, 4),
     Inst(OpCode::LDA, AddrMode::ABX, 4),
     Inst(OpCode::LDX, AddrMode::ABY, 4),
     Inst(OpCode::LAX, AddrMode::ABY, 4),
     Inst(OpCode::CPY, AddrMode::IMM, 2),
     Inst(OpCode::CMP, AddrMode::IZX, 6),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
-    Inst(OpCode::DCM, AddrMode::IZX, 8),
+    Inst(OpCode::NOP, AddrMode::IMP, 2),
+    Inst(OpCode::DCP, AddrMode::IZX, 8),
     Inst(OpCode::CPY, AddrMode::ZP0, 3),
     Inst(OpCode::CMP, AddrMode::ZP0, 3),
     Inst(OpCode::DEC, AddrMode::ZP0, 5),
-    Inst(OpCode::DCM, AddrMode::ZP0, 5),
+    Inst(OpCode::DCP, AddrMode::ZP0, 5),
     Inst(OpCode::INY, AddrMode::IMP, 2),
     Inst(OpCode::CMP, AddrMode::IMM, 2),
     Inst(OpCode::DEX, AddrMode::IMP, 2),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
+    Inst(OpCode::AXS, AddrMode::IMP, 2),
     Inst(OpCode::CPY, AddrMode::ABS, 4),
     Inst(OpCode::CMP, AddrMode::ABS, 4),
     Inst(OpCode::DEC, AddrMode::ABS, 6),
-    Inst(OpCode::DCM, AddrMode::ABS, 6),
+    Inst(OpCode::DCP, AddrMode::ABS, 6),
     Inst(OpCode::BNE, AddrMode::REL, 2),
     Inst(OpCode::CMP, AddrMode::IZY, 5),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
-    Inst(OpCode::DCM, AddrMode::IZY, 8),
-    Inst(OpCode::NII, AddrMode::ZPX, 4),
+    Inst(OpCode::KIL, AddrMode::IMP, 2),
+    Inst(OpCode::DCP, AddrMode::IZY, 8),
+    Inst(OpCode::NOP, AddrMode::ZPX, 4),
     Inst(OpCode::CMP, AddrMode::ZPX, 4),
     Inst(OpCode::DEC, AddrMode::ZPX, 6),
-    Inst(OpCode::DCM, AddrMode::ZPX, 6),
+    Inst(OpCode::DCP, AddrMode::ZPX, 6),
     Inst(OpCode::CLD, AddrMode::IMP, 2),
     Inst(OpCode::CMP, AddrMode::ABY, 4),
-    Inst(OpCode::NII, AddrMode::IMP, 2),
-    Inst(OpCode::DCM, AddrMode::ABY, 7),
-    Inst(OpCode::NII, AddrMode::ABX, 4),
+    Inst(OpCode::NOP, AddrMode::IMP, 2),
+    Inst(OpCode::DCP, AddrMode::ABY, 7),
+    Inst(OpCode::NOP, AddrMode::ABX, 4),
     Inst(OpCode::CMP, AddrMode::ABX, 4),
     Inst(OpCode::DEC, AddrMode::ABX, 7),
-    Inst(OpCode::DCM, AddrMode::ABX, 7),
+    Inst(OpCode::DCP, AddrMode::ABX, 7),
     Inst(OpCode::CPX, AddrMode::IMM, 2),
     Inst(OpCode::SBC, AddrMode::IZX, 6),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
-    Inst(OpCode::INS, AddrMode::IZX, 8),
+    Inst(OpCode::NOP, AddrMode::IMP, 2),
+    Inst(OpCode::ISC, AddrMode::IZX, 8),
     Inst(OpCode::CPX, AddrMode::ZP0, 3),
     Inst(OpCode::SBC, AddrMode::ZP0, 3),
     Inst(OpCode::INC, AddrMode::ZP0, 5),
-    Inst(OpCode::INS, AddrMode::ZP0, 5),
+    Inst(OpCode::ISC, AddrMode::ZP0, 5),
     Inst(OpCode::INX, AddrMode::IMP, 2),
     Inst(OpCode::SBC, AddrMode::IMM, 2),
-    Inst(OpCode::NII, AddrMode::IMP, 2),
+    Inst(OpCode::NOP, AddrMode::IMP, 2),
     Inst(OpCode::SBC, AddrMode::IMM, 2),
     Inst(OpCode::CPX, AddrMode::ABS, 4),
     Inst(OpCode::SBC, AddrMode::ABS, 4),
     Inst(OpCode::INC, AddrMode::ABS, 6),
-    Inst(OpCode::INS, AddrMode::ABS, 6),
+    Inst(OpCode::ISC, AddrMode::ABS, 6),
     Inst(OpCode::BEQ, AddrMode::REL, 2),
     Inst(OpCode::SBC, AddrMode::IZY, 5),
-    Inst(OpCode::XXX, AddrMode::IMP, 2),
-    Inst(OpCode::INS, AddrMode::IZY, 8),
-    Inst(OpCode::NII, AddrMode::ZPX, 4),
+    Inst(OpCode::KIL, AddrMode::IMP, 2),
+    Inst(OpCode::ISC, AddrMode::IZY, 8),
+    Inst(OpCode::NOP, AddrMode::ZPX, 4),
     Inst(OpCode::SBC, AddrMode::ZPX, 4),
     Inst(OpCode::INC, AddrMode::ZPX, 6),
-    Inst(OpCode::INS, AddrMode::ZPX, 6),
+    Inst(OpCode::ISC, AddrMode::ZPX, 6),
     Inst(OpCode::SED, AddrMode::IMP, 2),
     Inst(OpCode::SBC, AddrMode::ABY, 4),
-    Inst(OpCode::NII, AddrMode::IMP, 2),
-    Inst(OpCode::INS, AddrMode::ABY, 7),
-    Inst(OpCode::NII, AddrMode::ABX, 4),
+    Inst(OpCode::NOP, AddrMode::IMP, 2),
+    Inst(OpCode::ISC, AddrMode::ABY, 7),
+    Inst(OpCode::NOP, AddrMode::ABX, 4),
     Inst(OpCode::SBC, AddrMode::ABX, 4),
     Inst(OpCode::INC, AddrMode::ABX, 7),
-    Inst(OpCode::INS, AddrMode::ABX, 7),
+    Inst(OpCode::ISC, AddrMode::ABX, 7),
 ];
 
 ///  7  bit  0
@@ -576,7 +584,7 @@ impl CPU {
         let mut extra_cycles = 0_u64;
         match inst.0 {
             // Do nothing.
-            OpCode::NOP => {
+            OpCode::NOP | OpCode::KIL => {
                 let _ = self.resolve_operand(inst.1, bus);
             }
             // Bitwise
@@ -761,6 +769,75 @@ impl CPU {
                 let operand = self.require_operand(inst.1, bus);
                 self.sbc(operand.addr, bus);
                 extra_cycles += inst.1.read_page_cross_penalty(operand);
+            }
+            // unofficial
+            OpCode::LAX => {
+                let operand = self.require_operand(inst.1, bus);
+                self.lax(operand.addr, bus);
+            }
+            OpCode::AHX => {
+                let operand = self.require_operand(inst.1, bus);
+                self.ahx(operand.addr, bus);
+            }
+            OpCode::ALR => {
+                let operand = self.require_operand(inst.1, bus);
+                self.alr(operand.addr, bus);
+            }
+            OpCode::ANC => {
+                let operand = self.require_operand(inst.1, bus);
+                self.anc(operand.addr, bus);
+            }
+            OpCode::ARR => {
+                let operand = self.require_operand(inst.1, bus);
+                self.arr(operand.addr, bus);
+            }
+            OpCode::AXS => {
+                let operand = self.require_operand(inst.1, bus);
+                self.axs(operand.addr, bus);
+            }
+            OpCode::DCP => {
+                let operand = self.require_operand(inst.1, bus);
+                self.dcp(operand.addr, bus);
+            }
+            OpCode::LAS => {
+                let operand = self.require_operand(inst.1, bus);
+                self.las(operand.addr, bus);
+            }
+            OpCode::ISC => {
+                let operand = self.require_operand(inst.1, bus);
+                self.isc(operand.addr, bus);
+            }
+            OpCode::RLA => {
+                let operand = self.require_operand(inst.1, bus);
+                self.rla(operand.addr, bus);
+            }
+            OpCode::RRA => {
+                let operand = self.require_operand(inst.1, bus);
+                self.rra(operand.addr, bus);
+            }
+            OpCode::SLO => {
+                let operand = self.require_operand(inst.1, bus);
+                self.slo(operand.addr, bus);
+            }
+            OpCode::SRE => {
+                let operand = self.require_operand(inst.1, bus);
+                self.sre(operand.addr, bus);
+            }
+            OpCode::TAS => {
+                let operand = self.require_operand(inst.1, bus);
+                self.tas(operand.addr, bus);
+            }
+            OpCode::SHX => {
+                let operand = self.require_operand(inst.1, bus);
+                self.shx(operand.addr, bus);
+            }
+            OpCode::SHY => {
+                let operand = self.require_operand(inst.1, bus);
+                self.shy(operand.addr, bus);
+            }
+            OpCode::SAX => {
+                let operand = self.require_operand(inst.1, bus);
+                self.sax(operand.addr, bus);
             }
             _ => {
                 let _ = self.resolve_operand(inst.1, bus);
@@ -1274,6 +1351,116 @@ impl CPU {
         self.p.z = self.a & val == 0;
         self.p.n = val & 0x80 != 0;
         self.p.v = val & 0x40 != 0;
+    }
+
+    // unofficial
+    fn ahx(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        let tmp = addr - self.y as u16;
+        if self.y as u16 + tmp < 0x00FF {
+            let val = self.a & self.x & ((addr >> 8) as u8) + 1;
+            bus.cpu_write(addr, val);
+        } else {
+            let val = bus.cpu_read(addr);
+            bus.cpu_write(addr, val);
+        }
+    }
+
+    fn alr(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        self.and(addr, bus);
+        self.a = self.op_lsr(self.a);
+    }
+
+    fn anc(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        self.and(addr, bus);
+        self.p.c = self.p.n;
+    }
+
+    fn axs(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        let l = self.a & self.x;
+        let r = bus.cpu_read(addr);
+        self.x = l.wrapping_sub(r);
+        self.set_zn(self.x);
+        self.p.c = l >= r;
+    }
+
+    fn dcp(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        self.dec(addr, bus);
+        self.cmp(addr, bus);
+    }
+
+    fn arr(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        let f: u8 = if self.p.c { 0x80 } else { 0 };
+        self.a = (bus.cpu_read(addr) & self.a) >> 1 | f;
+        self.set_zn(self.a);
+        self.p.c = self.a & 0x40 != 0;
+        self.p.v = self.p.c != ((self.a & 0x20) != 0);
+    }
+
+    fn las(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        let val = bus.cpu_read(addr);
+        self.sp &= val;
+        self.a = val;
+        self.x = val;
+        self.set_zn(val);
+    }
+
+    fn isc(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        self.inc(addr, bus);
+        self.sbc(addr, bus);
+    }
+
+    fn rla(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        self.rol(addr, bus);
+        self.and(addr, bus);
+    }
+
+    fn rra(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        self.ror(addr, bus);
+        self.adc(addr, bus);
+    }
+
+    fn lax(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        let val = bus.cpu_read(addr);
+        self.a = val;
+        self.x = val;
+        self.set_zn(val);
+    }
+
+    fn sax(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        let val = self.a & self.x;
+        bus.cpu_write(addr, val);
+    }
+
+    fn slo(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        self.asl(addr, bus);
+        self.ora(addr, bus);
+    }
+
+    fn sre(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        self.lsr(addr, bus);
+        self.eor(addr, bus);
+    }
+
+    fn tas(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        self.sp = self.a & self.x;
+        let val = self.sp & (addr >> 8) as u8 + 1;
+        let tmp = addr - self.y as u16;
+        if self.y as u16 + tmp <= 0x00FF {
+            bus.cpu_write(addr, val);
+        } else {
+            let val = bus.cpu_read(addr);
+            bus.cpu_write(addr, val);
+        }
+    }
+
+    fn shx(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        let hi = ((addr >> 8) + 1) as u8;
+        bus.cpu_write(addr, self.x & hi);
+    }
+
+    fn shy(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        let hi = ((addr >> 8) + 1) as u8;
+        bus.cpu_write(addr, self.y * hi);
     }
 }
 
