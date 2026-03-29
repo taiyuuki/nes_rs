@@ -1,3 +1,4 @@
+use crate::cartridge::{Cartridge, CartridgeError, Mirroring};
 use crate::dma::DmaController;
 use crate::ppu::{PPU, PpuBus};
 
@@ -17,16 +18,18 @@ pub trait CPUBus {
 
 struct PpuMemory {
     chr_ram: [u8; 0x2000],
-    vram: [u8; 0x800],
+    vram: [u8; 0x1000],
     palette: [u8; 0x20],
+    cartridge: Option<Cartridge>,
 }
 
 impl PpuMemory {
     fn new() -> Self {
         Self {
             chr_ram: [0; 0x2000],
-            vram: [0; 0x800],
+            vram: [0; 0x1000],
             palette: [0; 0x20],
+            cartridge: None,
         }
     }
 
@@ -41,6 +44,47 @@ impl PpuMemory {
         }
         index as usize
     }
+
+    fn nametable_index(&self, addr: u16) -> usize {
+        let offset = (addr - 0x2000) & 0x0FFF;
+        let table = offset / 0x0400;
+        let inner = (offset & 0x03FF) as usize;
+
+        match self.mirroring() {
+            Mirroring::Horizontal => match table {
+                0 | 1 => inner,
+                2 | 3 => 0x0400 + inner,
+                _ => unreachable!(),
+            },
+            Mirroring::Vertical => match table {
+                0 | 2 => inner,
+                1 | 3 => 0x0400 + inner,
+                _ => unreachable!(),
+            },
+            Mirroring::FourScreen => offset as usize,
+        }
+    }
+
+    fn mirroring(&self) -> Mirroring {
+        self.cartridge
+            .as_ref()
+            .map(Cartridge::mirroring)
+            .unwrap_or(Mirroring::Horizontal)
+    }
+
+    fn insert_cartridge(&mut self, cartridge: Cartridge) {
+        self.cartridge = Some(cartridge);
+    }
+
+    fn cartridge_cpu_read(&mut self, addr: u16) -> Option<u8> {
+        self.cartridge.as_mut().and_then(|cartridge| cartridge.cpu_read(addr))
+    }
+
+    fn cartridge_cpu_write(&mut self, addr: u16, data: u8) -> bool {
+        self.cartridge
+            .as_mut()
+            .is_some_and(|cartridge| cartridge.cpu_write(addr, data))
+    }
 }
 
 impl Default for PpuMemory {
@@ -53,8 +97,12 @@ impl PpuBus for PpuMemory {
     fn ppu_read(&mut self, addr: u16) -> u8 {
         let addr = Self::normalize_addr(addr);
         match addr {
-            0x0000..=0x1FFF => self.chr_ram[addr as usize],
-            0x2000..=0x3EFF => self.vram[((addr - 0x2000) & 0x07FF) as usize],
+            0x0000..=0x1FFF => self
+                .cartridge
+                .as_mut()
+                .and_then(|cartridge| cartridge.ppu_read(addr))
+                .unwrap_or_else(|| self.chr_ram[addr as usize]),
+            0x2000..=0x3EFF => self.vram[self.nametable_index(addr)],
             0x3F00..=0x3FFF => self.palette[Self::palette_index(addr)],
             _ => 0,
         }
@@ -63,8 +111,16 @@ impl PpuBus for PpuMemory {
     fn ppu_write(&mut self, addr: u16, data: u8) {
         let addr = Self::normalize_addr(addr);
         match addr {
-            0x0000..=0x1FFF => self.chr_ram[addr as usize] = data,
-            0x2000..=0x3EFF => self.vram[((addr - 0x2000) & 0x07FF) as usize] = data,
+            0x0000..=0x1FFF => {
+                if !self
+                    .cartridge
+                    .as_mut()
+                    .is_some_and(|cartridge| cartridge.ppu_write(addr, data))
+                {
+                    self.chr_ram[addr as usize] = data;
+                }
+            }
+            0x2000..=0x3EFF => self.vram[self.nametable_index(addr)] = data,
             0x3F00..=0x3FFF => self.palette[Self::palette_index(addr)] = data,
             _ => {}
         }
@@ -95,6 +151,16 @@ impl NESBus {
 
     pub fn ppu(&self) -> &PPU {
         &self.ppu
+    }
+
+    pub fn insert_cartridge(&mut self, cartridge: Cartridge) {
+        self.ppu_memory.insert_cartridge(cartridge);
+    }
+
+    pub fn load_cartridge_ines(&mut self, rom: &[u8]) -> Result<(), CartridgeError> {
+        let cartridge = Cartridge::from_ines(rom)?;
+        self.insert_cartridge(cartridge);
+        Ok(())
     }
 
     pub fn reset(&mut self) {
@@ -132,6 +198,7 @@ impl NESBus {
                 let ppu_memory = &mut self.ppu_memory;
                 ppu.cpu_read_register(ppu_memory, 0x2000 | (addr & 0x0007))
             }
+            0x4020..=0xFFFF => self.ppu_memory.cartridge_cpu_read(addr).unwrap_or(0),
             // Handle other address ranges (APU, cartridge, etc.)
             _ => 0,
         }
@@ -146,6 +213,9 @@ impl NESBus {
                 ppu.cpu_write_register(ppu_memory, 0x2000 | (addr & 0x0007), data);
             }
             0x4014 => self.dma.request_oam_dma(data),
+            0x4020..=0xFFFF => {
+                let _ = self.ppu_memory.cartridge_cpu_write(addr, data);
+            }
             // Handle other address ranges (APU, cartridge, etc.)
             _ => {}
         }
@@ -176,5 +246,69 @@ impl CPUBus for NESBus {
 impl Default for NESBus {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_ines(prg_banks: u8, chr_banks: u8, flags6: u8) -> Vec<u8> {
+        let mut rom = vec![0; 16];
+        rom[0..4].copy_from_slice(b"NES\x1A");
+        rom[4] = prg_banks;
+        rom[5] = chr_banks;
+        rom[6] = flags6;
+
+        let prg_len = prg_banks as usize * 0x4000;
+        let chr_len = chr_banks as usize * 0x2000;
+        rom.extend((0..prg_len).map(|index| (index & 0xFF) as u8));
+        rom.extend((0..chr_len).map(|index| (0x80 | (index & 0x7F)) as u8));
+        rom
+    }
+
+    #[test]
+    fn cartridge_prg_rom_is_visible_on_cpu_bus() {
+        let mut bus = NESBus::new();
+        let rom = make_ines(1, 1, 0x00);
+
+        bus.load_cartridge_ines(&rom).expect("NROM should load");
+
+        assert_eq!(bus.cpu_read(0x8000), 0x00);
+        assert_eq!(bus.cpu_read(0x8001), 0x01);
+        assert_eq!(bus.cpu_read(0xC000), 0x00);
+        assert_eq!(bus.cpu_read(0xFFFF), 0xFF);
+    }
+
+    #[test]
+    fn cartridge_chr_rom_is_visible_through_ppu_registers() {
+        let mut bus = NESBus::new();
+        let rom = make_ines(1, 1, 0x00);
+
+        bus.load_cartridge_ines(&rom).expect("NROM should load");
+        bus.cpu_write(0x2006, 0x00);
+        bus.cpu_write(0x2006, 0x00);
+
+        assert_eq!(bus.cpu_read(0x2007), 0x00, "first read should return the old buffer");
+        assert_eq!(bus.cpu_read(0x2007), 0x80, "second read should return CHR byte 0");
+        assert_eq!(bus.cpu_read(0x2007), 0x81, "buffer should advance through CHR");
+    }
+
+    #[test]
+    fn nametable_access_uses_cartridge_mirroring() {
+        let mut bus = NESBus::new();
+        let rom = make_ines(1, 0, 0x01);
+
+        bus.load_cartridge_ines(&rom)
+            .expect("vertical mirroring NROM should load");
+
+        bus.cpu_write(0x2006, 0x20);
+        bus.cpu_write(0x2006, 0x00);
+        bus.cpu_write(0x2007, 0x3C);
+
+        bus.cpu_write(0x2006, 0x28);
+        bus.cpu_write(0x2006, 0x00);
+        assert_eq!(bus.cpu_read(0x2007), 0x00);
+        assert_eq!(bus.cpu_read(0x2007), 0x3C);
     }
 }

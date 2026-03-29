@@ -1,7 +1,10 @@
 mod bus;
+pub mod cartridge;
 mod cpu;
 mod dma;
 mod ppu;
+
+pub use cartridge::{Cartridge, CartridgeError, Mirroring};
 
 pub struct NES {
     pub cpu: cpu::CPU,
@@ -22,6 +25,14 @@ impl NES {
         self.bus.reset();
         self.cpu.reset(&mut self.bus);
         self.cpu.set_nmi(self.bus.ppu_nmi_line());
+    }
+
+    pub fn insert_cartridge(&mut self, cartridge: Cartridge) {
+        self.bus.insert_cartridge(cartridge);
+    }
+
+    pub fn load_cartridge_ines(&mut self, rom: &[u8]) -> Result<(), CartridgeError> {
+        self.bus.load_cartridge_ines(rom)
     }
 
     pub fn clock(&mut self) {
