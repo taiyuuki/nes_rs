@@ -19,15 +19,19 @@ impl NES {
     }
 
     pub fn reset(&mut self) {
+        self.bus.reset();
         self.cpu.reset(&mut self.bus);
+        self.cpu.set_nmi(self.bus.ppu_nmi_line());
     }
 
     pub fn clock(&mut self) {
         self.master_clock += 1;
+        self.bus.tick_ppu();
+        self.cpu.set_nmi(self.bus.ppu_nmi_line());
 
-        // The PPU runs every master clock. Hook it up here once rendering exists.
         if self.master_clock % 3 == 0 {
             self.cpu.cpu_clock(&mut self.bus);
+            self.cpu.set_nmi(self.bus.ppu_nmi_line());
         }
     }
 
