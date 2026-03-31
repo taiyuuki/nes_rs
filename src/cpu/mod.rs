@@ -901,6 +901,10 @@ impl CPU {
         self.nmi = nmi;
     }
 
+    pub fn clocks(&self) -> u64 {
+        self.clocks
+    }
+
     pub fn set_irq(&mut self, irq: bool) {
         self.interrupt = u8::from(irq);
     }

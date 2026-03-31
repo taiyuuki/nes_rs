@@ -20,6 +20,24 @@ impl PPUBus for TestPPUBus {
     }
 }
 
+fn run_ppu_cycles(ppu: &mut PPU, bus: &mut TestPPUBus, cycles: usize) {
+    for _ in 0..cycles {
+        ppu.clock(bus);
+    }
+}
+
+fn run_until_next_frame(ppu: &mut PPU, bus: &mut TestPPUBus) -> usize {
+    let start_frame = ppu.frame();
+    let mut cycles = 0;
+
+    while ppu.frame() == start_frame {
+        ppu.clock(bus);
+        cycles += 1;
+    }
+
+    cycles
+}
+
 #[test]
 fn ppudata_write_uses_configured_increment() {
     let mut ppu = PPU::new();
@@ -108,5 +126,95 @@ fn clock_enters_vblank_and_asserts_nmi_line_when_enabled() {
     assert!(ppu.in_vblank());
     assert!(ppu.nmi_line());
     assert_eq!(ppu.scanline(), 241);
-    assert_eq!(ppu.dot(), 1);
+}
+
+#[test]
+fn clock_clears_vblank_on_pre_render_scanline() {
+    let mut ppu = PPU::new();
+    let mut bus = TestPPUBus::new();
+
+    ppu.status = STATUS_VBLANK | STATUS_SPRITE_ZERO_HIT | STATUS_SPRITE_OVERFLOW;
+
+    ppu.clock(&mut bus);
+
+    assert!(!ppu.in_vblank());
+    assert_eq!(ppu.status & STATUS_SPRITE_ZERO_HIT, 0);
+    assert_eq!(ppu.status & STATUS_SPRITE_OVERFLOW, 0);
+}
+
+#[test]
+fn clock_renders_background_pixels_across_tile_boundaries() {
+    let mut ppu = PPU::new();
+    let mut bus = TestPPUBus::new();
+
+    ppu.cpu_write_register(&mut bus, 0x2001, MASK_SHOW_BG | MASK_SHOW_BG_LEFTMOST);
+
+    bus.mem[0x2000] = 0x01;
+    bus.mem[0x2001] = 0x02;
+    bus.mem[0x23C0] = 0x00;
+    bus.mem[0x0010] = 0b1000_0000;
+    bus.mem[0x0018] = 0x00;
+    bus.mem[0x0020] = 0b1000_0000;
+    bus.mem[0x0028] = 0x00;
+    bus.mem[0x3F00] = 0x09;
+    bus.mem[0x3F01] = 0x12;
+
+    run_ppu_cycles(&mut ppu, &mut bus, 341 + 16);
+
+    assert_eq!(ppu.bit_map[0], 0x12);
+    assert_eq!(ppu.bit_map[1], 0x09);
+    assert_eq!(ppu.bit_map[7], 0x09);
+    assert_eq!(ppu.bit_map[8], 0x12);
+}
+
+#[test]
+fn clock_uses_fine_x_scroll_for_background_pixels() {
+    let mut ppu = PPU::new();
+    let mut bus = TestPPUBus::new();
+
+    ppu.cpu_write_register(&mut bus, 0x2001, MASK_SHOW_BG | MASK_SHOW_BG_LEFTMOST);
+    ppu.cpu_write_register(&mut bus, 0x2005, 0x03);
+    ppu.cpu_write_register(&mut bus, 0x2005, 0x00);
+
+    bus.mem[0x2000] = 0x01;
+    bus.mem[0x23C0] = 0x00;
+    bus.mem[0x0010] = 0b1111_0000;
+    bus.mem[0x0018] = 0x00;
+    bus.mem[0x3F00] = 0x09;
+    bus.mem[0x3F01] = 0x12;
+
+    run_ppu_cycles(&mut ppu, &mut bus, 341 + 2);
+
+    assert_eq!(ppu.bit_map[0], 0x12);
+    assert_eq!(ppu.bit_map[1], 0x09);
+}
+
+#[test]
+fn odd_frame_skips_one_dot_when_rendering_is_enabled() {
+    let mut ppu = PPU::new();
+    let mut bus = TestPPUBus::new();
+
+    ppu.cpu_write_register(&mut bus, 0x2001, MASK_SHOW_BG);
+
+    let initial_prerender = run_until_next_frame(&mut ppu, &mut bus);
+    let odd_frame = run_until_next_frame(&mut ppu, &mut bus);
+    let even_frame = run_until_next_frame(&mut ppu, &mut bus);
+
+    assert_eq!(initial_prerender, 341);
+    assert_eq!(odd_frame, 341 * 262 - 1);
+    assert_eq!(even_frame, 341 * 262);
+}
+
+#[test]
+fn odd_frame_does_not_skip_when_rendering_is_disabled() {
+    let mut ppu = PPU::new();
+    let mut bus = TestPPUBus::new();
+
+    let initial_prerender = run_until_next_frame(&mut ppu, &mut bus);
+    let first_frame = run_until_next_frame(&mut ppu, &mut bus);
+    let second_frame = run_until_next_frame(&mut ppu, &mut bus);
+
+    assert_eq!(initial_prerender, 341);
+    assert_eq!(first_frame, 341 * 262);
+    assert_eq!(second_frame, first_frame);
 }

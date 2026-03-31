@@ -1,17 +1,39 @@
+use crate::cartridge::TVSystem;
+
 const STATUS_SPRITE_OVERFLOW: u8 = 0x20;
 const STATUS_SPRITE_ZERO_HIT: u8 = 0x40;
 const STATUS_VBLANK: u8 = 0x80;
+const MASK_SHOW_BG_LEFTMOST: u8 = 0x02;
+const MASK_SHOW_BG: u8 = 0x08;
+const MASK_SHOW_SPRITES: u8 = 0x10;
+const CTRL_BG_TABLE: u8 = 0x10;
 const CTRL_VRAM_INCREMENT: u8 = 0x04;
 const CTRL_NMI_ENABLE: u8 = 0x80;
+const DOTS_PER_SCANLINE: u16 = 341;
+const VISIBLE_SCANLINES: i16 = 240;
+const NTSC_CPU_SCHEDULE: [u8; 1] = [3];
+const PAL_CPU_SCHEDULE: [u8; 5] = [3, 3, 3, 3, 4];
+const DENDY_CPU_SCHEDULE: [u8; 1] = [3];
+
+const PAL: [u8; 32] = [
+    0x0F, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x0D, 0x08, 0x10, 0x08, 0x24, 0x00, 0x00, 0x04, 0x2C,
+    0x0F, 0x01, 0x34, 0x03, 0x00, 0x04, 0x00, 0x14, 0x08, 0x3A, 0x00, 0x02, 0x00, 0x20, 0x2C, 0x08,
+];
 
 pub trait PPUBus {
     fn ppu_read(&mut self, addr: u16) -> u8;
     fn ppu_write(&mut self, addr: u16, data: u8);
+    fn check_a12(&mut self, _addr: u16) {}
 }
 
 pub struct PPU {
+    scanline: i16,
+    cycles: u16,
+    frame: u64,
+
     oam: [u8; 256],
     oam_addr: u8,
+
     ctrl: u8,
     mask: u8,
     status: u8,
@@ -21,9 +43,27 @@ pub struct PPU {
     fine_x: u8,
     write_latch: bool,
     read_buffer: u8,
-    scanline: i16,
-    dot: u16,
     odd_frame: bool,
+    next_tile_id: u8,
+    next_tile_attr: u8,
+    next_tile_lsb: u8,
+    next_tile_msb: u8,
+    bg_pattern_shift_lo: u16,
+    bg_pattern_shift_hi: u16,
+    bg_attr_shift_lo: u16,
+    bg_attr_shift_hi: u16,
+
+    // parameters
+    tv_system: TVSystem,
+    num_scanlines: i16,
+    vblank_lines: i16,
+
+    loopy_v: u16,
+    loopy_t: u16,
+    bit_map: [u8; 0xF000],
+    bg_colors: [u8; 0x100],
+
+    even: bool,
 }
 
 impl PPU {
@@ -31,6 +71,7 @@ impl PPU {
         Self {
             oam: [0; 256],
             oam_addr: 0,
+            frame: 0,
             ctrl: 0,
             mask: 0,
             status: 0,
@@ -41,8 +82,26 @@ impl PPU {
             write_latch: false,
             read_buffer: 0,
             scanline: 261,
-            dot: 0,
+            cycles: 0,
             odd_frame: false,
+            next_tile_id: 0,
+            next_tile_attr: 0,
+            next_tile_lsb: 0,
+            next_tile_msb: 0,
+            bg_pattern_shift_lo: 0,
+            bg_pattern_shift_hi: 0,
+            bg_attr_shift_lo: 0,
+            bg_attr_shift_hi: 0,
+            tv_system: TVSystem::NTSC,
+            num_scanlines: 262,
+            vblank_lines: 241,
+
+            loopy_v: 0,
+            loopy_t: 0,
+            bit_map: [0; 0xF000],
+            bg_colors: [0; 0x100],
+
+            even: false,
         }
     }
 
@@ -57,11 +116,40 @@ impl PPU {
         self.write_latch = false;
         self.read_buffer = 0;
         self.scanline = 261;
-        self.dot = 0;
+        self.cycles = 0;
+        self.frame = 0;
         self.odd_frame = false;
+        self.next_tile_id = 0;
+        self.next_tile_attr = 0;
+        self.next_tile_lsb = 0;
+        self.next_tile_msb = 0;
+        self.bg_pattern_shift_lo = 0;
+        self.bg_pattern_shift_hi = 0;
+        self.bg_attr_shift_lo = 0;
+        self.bg_attr_shift_hi = 0;
+        self.set_current_vram_addr(0);
+        self.set_temp_vram_addr(0);
     }
 
-    pub fn cpu_read_register<B: PPUBus>(&mut self, bus: &mut B, addr: u16) -> u8 {
+    pub fn set_parameters(&mut self, tv_system: TVSystem) {
+        self.tv_system = tv_system;
+        match tv_system {
+            TVSystem::NTSC => {
+                self.num_scanlines = 262;
+                self.vblank_lines = 241;
+            }
+            TVSystem::PAL => {
+                self.num_scanlines = 312;
+                self.vblank_lines = 241;
+            }
+            TVSystem::DENDY => {
+                self.num_scanlines = 312;
+                self.vblank_lines = 241;
+            }
+        }
+    }
+
+    pub fn cpu_read_register(&mut self, bus: &mut impl PPUBus, addr: u16) -> u8 {
         match addr {
             0x2002 => self.read_status(),
             0x2004 => {
@@ -74,14 +162,15 @@ impl PPU {
         }
     }
 
-    pub fn cpu_write_register<B: PPUBus>(&mut self, bus: &mut B, addr: u16, data: u8) {
+    pub fn cpu_write_register(&mut self, bus: &mut impl PPUBus, addr: u16, data: u8) {
         self.open_bus = data;
 
         match addr {
             0x2000 => {
                 self.ctrl = data;
-                self.temp_vram_addr =
-                    (self.temp_vram_addr & !0x0C00) | (((data as u16) & 0x03) << 10);
+                self.set_temp_vram_addr(
+                    (self.temp_vram_addr & !0x0C00) | (((data as u16) & 0x03) << 10),
+                );
             }
             0x2001 => self.mask = data,
             0x2003 => self.oam_addr = data,
@@ -93,24 +182,75 @@ impl PPU {
         }
     }
 
-    pub fn clock<B: PPUBus>(&mut self, _bus: &mut B) {
-        self.dot += 1;
-        if self.dot > 340 {
-            self.dot = 0;
-            self.scanline += 1;
-            if self.scanline > 261 {
-                self.scanline = 0;
-                self.odd_frame = !self.odd_frame;
+    pub fn clock(&mut self, bus: &mut impl PPUBus) {
+        let visible_scanline = self.scanline < VISIBLE_SCANLINES;
+        let pre_render_scanline = self.scanline == self.num_scanlines - 1;
+        let render_scanline = visible_scanline || pre_render_scanline;
+        let visible_cycle = self.cycles < 256;
+        let fetch_cycle = visible_cycle || (320..337).contains(&self.cycles);
+
+        if self.scanline == self.vblank_lines && self.cycles == 0 {
+            self.status |= STATUS_VBLANK;
+        }
+
+        if self.scanline == self.num_scanlines - 1 && self.cycles == 0 {
+            self.status &= !(STATUS_SPRITE_OVERFLOW | STATUS_SPRITE_ZERO_HIT | STATUS_VBLANK);
+        }
+
+        if render_scanline && self.rendering_on() {
+            if visible_scanline && visible_cycle {
+                self.draw_bg_pixel(self.cycles as i16, bus);
+                self.draw_sprite_pixel(self.cycles as i16);
+            }
+
+            if self.bg_on() && fetch_cycle {
+                self.update_bg_shifters();
+            }
+
+            if self.bg_on() && fetch_cycle {
+                self.fetch_bg(bus);
+            }
+
+            match self.cycles {
+                255 => self.increment_y(),
+                256 => {
+                    self.load_bg_shifters();
+                    self.transfer_x();
+                    if self.sprites_on() && visible_scanline {
+                        self.eval_sprites(bus);
+                    }
+                }
+                279..=303 if pre_render_scanline => self.transfer_y(),
+                _ => {}
             }
         }
 
-        match (self.scanline, self.dot) {
-            (241, 1) => self.status |= STATUS_VBLANK,
-            (261, 1) => {
-                self.status &= !(STATUS_VBLANK | STATUS_SPRITE_ZERO_HIT | STATUS_SPRITE_OVERFLOW);
-            }
-            _ => {}
+        if self.should_skip_odd_frame_cycle(pre_render_scanline) {
+            self.start_next_frame();
+            return;
         }
+
+        self.cycles += 1;
+        if self.cycles >= DOTS_PER_SCANLINE {
+            self.cycles = 0;
+            self.scanline += 1;
+
+            if self.scanline >= self.num_scanlines {
+                self.start_next_frame();
+            }
+        }
+    }
+
+    pub fn bg_on(&self) -> bool {
+        (self.mask & MASK_SHOW_BG) != 0
+    }
+
+    pub fn sprites_on(&self) -> bool {
+        (self.mask & MASK_SHOW_SPRITES) != 0
+    }
+
+    pub fn rendering_on(&self) -> bool {
+        self.bg_on() || self.sprites_on()
     }
 
     pub fn nmi_line(&self) -> bool {
@@ -125,8 +265,16 @@ impl PPU {
         self.scanline
     }
 
-    pub fn dot(&self) -> u16 {
-        self.dot
+    pub fn frame(&self) -> u64 {
+        self.frame
+    }
+
+    pub fn cpu_schedule(&self) -> &'static [u8] {
+        match self.tv_system {
+            TVSystem::NTSC => &NTSC_CPU_SCHEDULE,
+            TVSystem::PAL => &PAL_CPU_SCHEDULE,
+            TVSystem::DENDY => &DENDY_CPU_SCHEDULE,
+        }
     }
 
     pub(crate) fn write_oam_dma(&mut self, data: u8) {
@@ -149,14 +297,14 @@ impl PPU {
         status
     }
 
-    fn read_data<B: PPUBus>(&mut self, bus: &mut B) -> u8 {
-        let addr = self.vram_addr & 0x3FFF;
+    fn read_data(&mut self, bus: &mut impl PPUBus) -> u8 {
+        let addr = self.loopy_v & 0x3FFF;
         let data = if addr >= 0x3F00 {
-            self.read_buffer = bus.ppu_read(addr.wrapping_sub(0x1000));
-            bus.ppu_read(addr)
+            self.read_buffer = self.ppu_read_bus(bus, addr.wrapping_sub(0x1000));
+            self.ppu_read_bus(bus, addr)
         } else {
             let buffered = self.read_buffer;
-            self.read_buffer = bus.ppu_read(addr);
+            self.read_buffer = self.ppu_read_bus(bus, addr);
             buffered
         };
 
@@ -165,32 +313,34 @@ impl PPU {
         data
     }
 
-    fn write_data<B: PPUBus>(&mut self, bus: &mut B, data: u8) {
-        let addr = self.vram_addr & 0x3FFF;
-        bus.ppu_write(addr, data);
+    fn write_data(&mut self, bus: &mut impl PPUBus, data: u8) {
+        let addr = self.loopy_v & 0x3FFF;
+        self.ppu_write_bus(bus, addr, data);
         self.increment_vram_addr();
     }
 
     fn write_scroll(&mut self, data: u8) {
         if !self.write_latch {
             self.fine_x = data & 0x07;
-            self.temp_vram_addr = (self.temp_vram_addr & !0x001F) | ((data as u16) >> 3);
+            self.set_temp_vram_addr((self.temp_vram_addr & !0x001F) | ((data as u16) >> 3));
             self.write_latch = true;
         } else {
-            self.temp_vram_addr = (self.temp_vram_addr & !0x73E0)
-                | ((((data as u16) >> 3) & 0x1F) << 5)
-                | (((data as u16) & 0x07) << 12);
+            self.set_temp_vram_addr(
+                (self.temp_vram_addr & !0x73E0)
+                    | ((((data as u16) >> 3) & 0x1F) << 5)
+                    | (((data as u16) & 0x07) << 12),
+            );
             self.write_latch = false;
         }
     }
 
     fn write_addr(&mut self, data: u8) {
         if !self.write_latch {
-            self.temp_vram_addr = (self.temp_vram_addr & 0x00FF) | (((data as u16) & 0x3F) << 8);
+            self.set_temp_vram_addr((self.temp_vram_addr & 0x00FF) | (((data as u16) & 0x3F) << 8));
             self.write_latch = true;
         } else {
-            self.temp_vram_addr = (self.temp_vram_addr & 0x7F00) | data as u16;
-            self.vram_addr = self.temp_vram_addr;
+            self.set_temp_vram_addr((self.temp_vram_addr & 0x7F00) | data as u16);
+            self.set_current_vram_addr(self.temp_vram_addr);
             self.write_latch = false;
         }
     }
@@ -201,12 +351,235 @@ impl PPU {
         } else {
             1
         };
-        self.vram_addr = self.vram_addr.wrapping_add(increment);
+        self.set_current_vram_addr(self.loopy_v.wrapping_add(increment));
     }
 
     fn write_oam_data(&mut self, data: u8) {
         self.oam[self.oam_addr as usize] = data;
         self.oam_addr = self.oam_addr.wrapping_add(1);
+    }
+
+    fn fetch_bg(&mut self, bus: &mut impl PPUBus) {
+        match self.cycles & 0x07 {
+            0 => {
+                self.load_bg_shifters();
+                self.fetch_nt(bus);
+            }
+            2 => {
+                let addr = 0x23C0
+                    | (self.loopy_v & 0x0C00)
+                    | ((self.loopy_v >> 4) & 0x38)
+                    | ((self.loopy_v >> 2) & 0x07);
+                let attr = self.ppu_read_bus(bus, addr);
+                let shift = ((self.loopy_v >> 4) & 0x04) | (self.loopy_v & 0x02);
+                self.next_tile_attr = (attr >> shift) as u8 & 0x03;
+            }
+            4 => {
+                let addr = self.bg_pattern_addr(self.next_tile_id);
+                self.next_tile_lsb = self.ppu_read_bus(bus, addr);
+            }
+            6 => {
+                let addr = self.bg_pattern_addr(self.next_tile_id).wrapping_add(8);
+                self.next_tile_msb = self.ppu_read_bus(bus, addr);
+            }
+            7 => self.increment_x(),
+            _ => {}
+        }
+    }
+
+    fn fetch_nt(&mut self, bus: &mut impl PPUBus) {
+        let addr = 0x2000 | (self.loopy_v & 0x0FFF);
+        self.next_tile_id = self.ppu_read_bus(bus, addr);
+    }
+
+    fn eval_sprites(&mut self, _bus: &mut impl PPUBus) {
+        // TODO
+    }
+
+    fn draw_bg_pixel(&mut self, offset: i16, bus: &mut impl PPUBus) {
+        let x = offset as usize;
+        let y = self.scanline as usize;
+        if x >= 256 || y >= VISIBLE_SCANLINES as usize {
+            return;
+        }
+
+        let show_leftmost = (self.mask & MASK_SHOW_BG_LEFTMOST) != 0;
+        let bg_pixel = if self.bg_on() && (show_leftmost || x >= 8) {
+            self.current_bg_pixel()
+        } else {
+            0
+        };
+        let bg_palette = if bg_pixel == 0 {
+            0
+        } else {
+            self.current_bg_palette()
+        };
+
+        let palette_addr = if bg_pixel == 0 {
+            0x3F00
+        } else {
+            0x3F00 | (u16::from(bg_palette) << 2) | u16::from(bg_pixel)
+        };
+        let color = self.ppu_read_bus(bus, palette_addr) & 0x3F;
+        let pixel_index = y * 256 + x;
+
+        self.bit_map[pixel_index] = color;
+        self.bg_colors[x] = color;
+    }
+
+    fn draw_sprite_pixel(&mut self, _offset: i16) {
+        // TODO
+    }
+
+    fn set_current_vram_addr(&mut self, addr: u16) {
+        self.vram_addr = addr;
+        self.loopy_v = addr;
+    }
+
+    fn set_temp_vram_addr(&mut self, addr: u16) {
+        self.temp_vram_addr = addr;
+        self.loopy_t = addr;
+    }
+
+    fn should_skip_odd_frame_cycle(&self, pre_render_scanline: bool) -> bool {
+        self.num_scanlines == 262
+            && pre_render_scanline
+            && self.rendering_on()
+            && self.odd_frame
+            && self.cycles == DOTS_PER_SCANLINE - 2
+    }
+
+    fn start_next_frame(&mut self) {
+        self.scanline = 0;
+        self.cycles = 0;
+        self.frame += 1;
+        self.odd_frame = !self.odd_frame;
+        self.even = !self.even;
+    }
+
+    fn ppu_read_bus(&mut self, bus: &mut impl PPUBus, addr: u16) -> u8 {
+        let addr = addr & 0x3FFF;
+        bus.check_a12(addr);
+        bus.ppu_read(addr)
+    }
+
+    fn ppu_write_bus(&mut self, bus: &mut impl PPUBus, addr: u16, data: u8) {
+        let addr = addr & 0x3FFF;
+        bus.check_a12(addr);
+        bus.ppu_write(addr, data);
+    }
+
+    fn bg_pattern_addr(&self, tile_id: u8) -> u16 {
+        let table = if (self.ctrl & CTRL_BG_TABLE) != 0 {
+            0x1000
+        } else {
+            0x0000
+        };
+        let fine_y = (self.loopy_v >> 12) & 0x0007;
+        table | (u16::from(tile_id) << 4) | fine_y
+    }
+
+    fn update_bg_shifters(&mut self) {
+        if !self.bg_on() {
+            return;
+        }
+
+        self.bg_pattern_shift_lo <<= 1;
+        self.bg_pattern_shift_hi <<= 1;
+        self.bg_attr_shift_lo <<= 1;
+        self.bg_attr_shift_hi <<= 1;
+    }
+
+    fn load_bg_shifters(&mut self) {
+        self.bg_pattern_shift_lo =
+            (self.bg_pattern_shift_lo & 0xFF00) | u16::from(self.next_tile_lsb);
+        self.bg_pattern_shift_hi =
+            (self.bg_pattern_shift_hi & 0xFF00) | u16::from(self.next_tile_msb);
+
+        let attr_lo = if (self.next_tile_attr & 0x01) != 0 {
+            0xFF
+        } else {
+            0x00
+        };
+        let attr_hi = if (self.next_tile_attr & 0x02) != 0 {
+            0xFF
+        } else {
+            0x00
+        };
+
+        self.bg_attr_shift_lo = (self.bg_attr_shift_lo & 0xFF00) | attr_lo;
+        self.bg_attr_shift_hi = (self.bg_attr_shift_hi & 0xFF00) | attr_hi;
+    }
+
+    fn current_bg_pixel(&self) -> u8 {
+        let bit = 0x8000 >> self.fine_x;
+        let lo = u8::from((self.bg_pattern_shift_lo & bit) != 0);
+        let hi = u8::from((self.bg_pattern_shift_hi & bit) != 0);
+        (hi << 1) | lo
+    }
+
+    fn current_bg_palette(&self) -> u8 {
+        let bit = 0x8000 >> self.fine_x;
+        let lo = u8::from((self.bg_attr_shift_lo & bit) != 0);
+        let hi = u8::from((self.bg_attr_shift_hi & bit) != 0);
+        (hi << 1) | lo
+    }
+
+    fn increment_x(&mut self) {
+        if !self.rendering_on() {
+            return;
+        }
+
+        if (self.loopy_v & 0x001F) == 31 {
+            self.loopy_v &= !0x001F;
+            self.loopy_v ^= 0x0400;
+        } else {
+            self.loopy_v = self.loopy_v.wrapping_add(1);
+        }
+
+        self.vram_addr = self.loopy_v;
+    }
+
+    fn increment_y(&mut self) {
+        if !self.rendering_on() {
+            return;
+        }
+
+        if (self.loopy_v & 0x7000) != 0x7000 {
+            self.loopy_v = self.loopy_v.wrapping_add(0x1000);
+        } else {
+            self.loopy_v &= !0x7000;
+            let mut coarse_y = (self.loopy_v & 0x03E0) >> 5;
+            if coarse_y == 29 {
+                coarse_y = 0;
+                self.loopy_v ^= 0x0800;
+            } else if coarse_y == 31 {
+                coarse_y = 0;
+            } else {
+                coarse_y += 1;
+            }
+            self.loopy_v = (self.loopy_v & !0x03E0) | (coarse_y << 5);
+        }
+
+        self.vram_addr = self.loopy_v;
+    }
+
+    fn transfer_x(&mut self) {
+        if !self.rendering_on() {
+            return;
+        }
+
+        self.loopy_v = (self.loopy_v & !0x041F) | (self.loopy_t & 0x041F);
+        self.vram_addr = self.loopy_v;
+    }
+
+    fn transfer_y(&mut self) {
+        if !self.rendering_on() {
+            return;
+        }
+
+        self.loopy_v = (self.loopy_v & !0x7BE0) | (self.loopy_t & 0x7BE0);
+        self.vram_addr = self.loopy_v;
     }
 }
 

@@ -61,8 +61,8 @@ impl PPUMemory {
                 1 | 3 => 0x0400 + inner,
                 _ => unreachable!(),
             },
-            Mirroring::SS_MIRROR_0 => inner,
-            Mirroring::SS_MIRROR_1 => 0x0400 + inner,
+            Mirroring::SPAGE0 => inner,
+            Mirroring::SPAGE1 => 0x0400 + inner,
             Mirroring::FourScreen => offset as usize,
         }
     }
@@ -129,6 +129,12 @@ impl PPUBus for PPUMemory {
             _ => {}
         }
     }
+
+    fn check_a12(&mut self, addr: u16) {
+        if let Some(cartridge) = &mut self.cartridge {
+            cartridge.check_a12(addr);
+        }
+    }
 }
 
 pub struct NESBus {
@@ -158,6 +164,7 @@ impl NESBus {
     }
 
     pub fn insert_cartridge(&mut self, cartridge: Cartridge) {
+        self.ppu.set_parameters(cartridge.tv_system());
         self.ppu_memory.insert_cartridge(cartridge);
     }
 
@@ -180,6 +187,10 @@ impl NESBus {
 
     pub fn ppu_nmi_line(&self) -> bool {
         self.ppu.nmi_line()
+    }
+
+    pub fn ppu_frame(&self) -> u64 {
+        self.ppu.frame()
     }
 
     pub fn dma_in_progress(&self) -> bool {
