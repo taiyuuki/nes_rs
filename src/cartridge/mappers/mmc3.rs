@@ -147,7 +147,7 @@ impl Mmc3 {
         bank * CHR_BANK_LEN_1K + ((addr as usize) & 0x03FF)
     }
 
-    fn clock_irq_counter(&mut self, ppu_cycle: u64) {
+    fn clock_irq_counter(&mut self, ppu_cycle: u64, addr: u16, low_span: u64) {
         let old_counter = self.irq_counter;
         let reload_pending = self.irq_reload_pending;
         if self.irq_counter == 0 || self.irq_reload_pending {
@@ -162,15 +162,24 @@ impl Mmc3 {
         }
 
         if self.irq_enabled || self.irq_line || reload_pending {
-            Self::trace_mmc3(format_args!(
-                "a12-clock ppu={} counter:{}->{} latch={} reload_pending={} enabled={} irq_line={}",
+            Self::trace_mmc3_verbose(format_args!(
+                "a12-clock ppu={} addr={:04X} low_span={} counter:{}->{} latch={} reload_pending={} enabled={} irq_line={}",
                 ppu_cycle,
+                addr,
+                low_span,
                 old_counter,
                 self.irq_counter,
                 self.irq_latch,
                 reload_pending,
                 self.irq_enabled,
                 self.irq_line
+            ));
+        }
+
+        if self.irq_line {
+            Self::trace_mmc3(format_args!(
+                "irq-hit ppu={} addr={:04X} low_span={} counter:{}->{} latch={}",
+                ppu_cycle, addr, low_span, old_counter, self.irq_counter, self.irq_latch
             ));
         }
     }
@@ -330,7 +339,7 @@ impl Mapper for Mmc3 {
         } else if a12 && !self.last_a12 {
             let low_span = ppu_cycle.saturating_sub(self.a12_fall_cycle);
             if low_span >= A12_LOW_FILTER_PPU_CYCLES {
-                self.clock_irq_counter(ppu_cycle);
+                self.clock_irq_counter(ppu_cycle, addr, low_span);
             } else {
                 Self::trace_mmc3_verbose(format_args!(
                     "a12-ignore ppu={} low_span={} addr={:04X} counter={} latch={} reload_pending={} enabled={}",

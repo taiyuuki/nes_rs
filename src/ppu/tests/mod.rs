@@ -136,6 +136,10 @@ fn rendered_nametable_and_attribute_fetches_do_not_clock_mapper_a12() {
 
     assert!(bus.read_log.contains(&0x2000));
     assert!(bus.read_log.contains(&0x23C0));
+    assert!(
+        bus.a12_log.contains(&0x0000),
+        "nametable and attribute fetches should still drive mapper-visible A12 low timing"
+    );
     assert!(bus.a12_log.contains(&0x1010));
     assert!(bus.a12_log.contains(&0x1018));
     assert!(
@@ -186,6 +190,10 @@ fn sprite_garbage_nametable_fetches_do_not_clock_mapper_a12() {
     }
 
     assert!(bus.read_log.contains(&0x2000));
+    assert!(
+        bus.a12_log.contains(&0x0000),
+        "sprite-phase garbage nametable fetches should still pull mapper A12 low"
+    );
     assert!(bus.a12_log.contains(&0x1010));
     assert!(
         bus.a12_log.iter().all(|&addr| addr < 0x2000),
@@ -526,6 +534,18 @@ fn eight_by_sixteen_sprites_fetch_the_second_tile_for_bottom_half_rows() {
 }
 
 #[test]
+fn sprites_in_the_bottom_hidden_band_do_not_wrap_to_scanline_zero() {
+    let mut ppu = PPU::new();
+
+    set_sprite(&mut ppu.oam, 0, 0xF4, 0x03, 0x00, 8);
+
+    assert_eq!(ppu.sprite_row_for_scanline(0, 0, 8), None);
+    assert_eq!(ppu.sprite_row_for_scanline(0, 3, 8), None);
+    assert_eq!(ppu.sprite_row_for_scanline(0, 0, 16), None);
+    assert_eq!(ppu.sprite_row_for_scanline(0, 15, 16), None);
+}
+
+#[test]
 fn horizontally_flipped_sprites_reverse_pattern_bits() {
     let mut ppu = PPU::new();
     let mut bus = TestPPUBus::new();
@@ -815,6 +835,38 @@ fn sprite_pattern_fetches_happen_during_sprite_fetch_phase_not_during_evaluation
 
     assert!(bus.read_log.contains(&0x1010));
     assert!(bus.read_log.contains(&0x1018));
+}
+
+#[test]
+fn sprite_fetch_phase_reads_each_pattern_plane_once_per_slot() {
+    let mut ppu = PPU::new();
+    let mut bus = TestPPUBus::new();
+
+    ppu.cpu_write_register(&mut bus, 0x2000, CTRL_SPRITE_TABLE);
+    ppu.cpu_write_register(&mut bus, 0x2001, MASK_SHOW_SPRITES);
+    set_sprite(&mut ppu.oam, 0, 0xFF, 0x01, 0x00, 8);
+    ppu.scanline = 261;
+    ppu.cycles = 256;
+
+    for _ in 0..8 {
+        ppu.clock(&mut bus);
+    }
+
+    let pattern_lo_reads = bus.read_log.iter().filter(|&&addr| addr == 0x1010).count();
+    let pattern_hi_reads = bus.read_log.iter().filter(|&&addr| addr == 0x1018).count();
+    let exposed_lo_reads = bus.a12_log.iter().filter(|&&addr| addr == 0x1010).count();
+    let exposed_hi_reads = bus.a12_log.iter().filter(|&&addr| addr == 0x1018).count();
+
+    assert_eq!(
+        pattern_lo_reads, 1,
+        "sprite fetch subcycle 4 should read only the low pattern plane"
+    );
+    assert_eq!(
+        pattern_hi_reads, 1,
+        "sprite fetch subcycle 6 should read only the high pattern plane"
+    );
+    assert_eq!(exposed_lo_reads, 1);
+    assert_eq!(exposed_hi_reads, 1);
 }
 
 #[test]

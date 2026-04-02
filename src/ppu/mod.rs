@@ -737,11 +737,21 @@ impl PPU {
         sprite_height: u8,
     ) -> Option<u8> {
         let sprite_y = self.oam[sprite_index * 4];
-        let row = target_scanline.wrapping_sub(sprite_y).wrapping_sub(1);
-        if row >= sprite_height {
+        let sprite_top = if sprite_y == 0xFF {
+            0
+        } else {
+            u16::from(sprite_y) + 1
+        };
+        let target = u16::from(target_scanline);
+        if target < sprite_top {
             None
         } else {
-            Some(row)
+            let row = target - sprite_top;
+            if row >= u16::from(sprite_height) {
+                None
+            } else {
+                Some(row as u8)
+            }
         }
     }
 
@@ -755,8 +765,13 @@ impl PPU {
         let mut m = 0usize;
         while n < 64 {
             let value = self.oam[n * 4 + m];
-            let row = target_scanline.wrapping_sub(value).wrapping_sub(1);
-            if row < sprite_height {
+            let sprite_top = if value == 0xFF {
+                0
+            } else {
+                u16::from(value) + 1
+            };
+            let target = u16::from(target_scanline);
+            if target >= sprite_top && (target - sprite_top) < u16::from(sprite_height) {
                 return true;
             }
 
@@ -780,15 +795,15 @@ impl PPU {
             }
             4 => {
                 let sprite = self.scanline_sprites[slot];
-                let (pattern_lo, _) =
-                    self.fetch_sprite_pattern(bus, sprite.tile_id, sprite.attributes, sprite.row);
-                self.scanline_sprites[slot].pattern_lo = pattern_lo;
+                let addr = self.sprite_pattern_addr(sprite.tile_id, sprite.attributes, sprite.row);
+                self.scanline_sprites[slot].pattern_lo = self.ppu_read_bus_exposed(bus, addr);
             }
             6 => {
                 let sprite = self.scanline_sprites[slot];
-                let (_, pattern_hi) =
-                    self.fetch_sprite_pattern(bus, sprite.tile_id, sprite.attributes, sprite.row);
-                self.scanline_sprites[slot].pattern_hi = pattern_hi;
+                let addr = self
+                    .sprite_pattern_addr(sprite.tile_id, sprite.attributes, sprite.row)
+                    .wrapping_add(8);
+                self.scanline_sprites[slot].pattern_hi = self.ppu_read_bus_exposed(bus, addr);
             }
             _ => {}
         }
@@ -917,23 +932,30 @@ impl PPU {
 
     fn ppu_read_bus(&mut self, bus: &mut impl PPUBus, addr: u16) -> u8 {
         let addr = addr & 0x3FFF;
+        self.observe_mapper_a12_line(bus, addr);
         bus.ppu_read(addr)
     }
 
     fn ppu_read_bus_exposed(&mut self, bus: &mut impl PPUBus, addr: u16) -> u8 {
         let addr = addr & 0x3FFF;
-        if addr < 0x2000 {
-            bus.check_a12(addr, self.dot_clock);
-        }
+        self.observe_mapper_a12_line(bus, addr);
         bus.ppu_read(addr)
     }
 
     fn ppu_write_bus_exposed(&mut self, bus: &mut impl PPUBus, addr: u16, data: u8) {
         let addr = addr & 0x3FFF;
-        if addr < 0x2000 {
-            bus.check_a12(addr, self.dot_clock);
-        }
+        self.observe_mapper_a12_line(bus, addr);
         bus.ppu_write(addr, data);
+    }
+
+    fn observe_mapper_a12_line(&mut self, bus: &mut impl PPUBus, addr: u16) {
+        match addr {
+            0x0000..=0x1FFF => bus.check_a12(addr, self.dot_clock),
+            // MMC3 watches the PPU A12 line itself, so nametable/attribute/garbage fetches
+            // still drive the line low even though they must not create CHR high pulses.
+            0x2000..=0x2FFF => bus.check_a12(0x0000, self.dot_clock),
+            _ => {}
+        }
     }
 
     fn bg_pattern_addr(&self, tile_id: u8) -> u16 {
@@ -946,20 +968,14 @@ impl PPU {
         table | (u16::from(tile_id) << 4) | fine_y
     }
 
-    fn fetch_sprite_pattern(
-        &mut self,
-        bus: &mut impl PPUBus,
-        tile_id: u8,
-        attributes: u8,
-        row: u8,
-    ) -> (u8, u8) {
+    fn sprite_pattern_addr(&self, tile_id: u8, attributes: u8, row: u8) -> u16 {
         let mut fine_y = u16::from(row);
         let sprite_height = u16::from(self.sprite_height());
         if (attributes & 0x80) != 0 {
             fine_y = sprite_height - 1 - fine_y;
         }
 
-        let addr = if sprite_height == 16 {
+        if sprite_height == 16 {
             let table = u16::from(tile_id & 0x01) << 12;
             let tile = u16::from(tile_id & 0xFE) + (fine_y >> 3);
             table | (tile << 4) | (fine_y & 0x07)
@@ -970,12 +986,7 @@ impl PPU {
                 0x0000
             };
             table | (u16::from(tile_id) << 4) | fine_y
-        };
-
-        (
-            self.ppu_read_bus_exposed(bus, addr),
-            self.ppu_read_bus_exposed(bus, addr + 8),
-        )
+        }
     }
 
     fn sprite_height(&self) -> u8 {
