@@ -940,6 +940,10 @@ impl CPU {
                 let operand = self.require_operand(inst.1, bus);
                 self.axs(operand.addr, bus);
             }
+            OpCode::XAA => {
+                let operand = self.require_operand(inst.1, bus);
+                self.xaa(operand.addr, bus);
+            }
             OpCode::DCP => {
                 let operand = self.require_operand(inst.1, bus);
                 self.issue_rmw_dummy_read(inst.1, operand, bus);
@@ -1693,6 +1697,12 @@ impl CPU {
         self.x = l.wrapping_sub(r);
         self.set_zn(self.x);
         self.p.c = l >= r;
+    }
+
+    fn xaa(&mut self, addr: u16, bus: &mut impl CPUBus) {
+        let val = self.a & self.x & bus.cpu_read(addr);
+        self.a = val;
+        self.set_zn(val);
     }
 
     fn dcp(&mut self, addr: u16, bus: &mut impl CPUBus) {

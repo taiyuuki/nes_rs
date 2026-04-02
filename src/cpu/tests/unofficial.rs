@@ -118,3 +118,51 @@ fn cpu_step_executes_ahx_absolute_y_without_debug_overflow() {
     assert_eq!(cpu.pc, 0x0203);
     assert_eq!(cpu.cycles, 5);
 }
+
+#[test]
+fn cpu_step_executes_xaa_immediate_to_zero_without_touching_x() {
+    let mut cpu = CPU::new();
+    let mut bus = TestBus::new();
+    cpu.pc = 0x0200;
+    cpu.a = 0x5A;
+    cpu.x = 0x3B;
+    cpu.p.i = true;
+    cpu.p.c = true;
+    bus.cpu_write(0x0200, 0x8B);
+    bus.cpu_write(0x0201, 0x00);
+
+    cpu.clock(&mut bus);
+
+    assert_eq!(cpu.pc, 0x0202);
+    assert_eq!(cpu.cycles, 2);
+    assert_eq!(cpu.a, 0x00);
+    assert_eq!(cpu.x, 0x3B);
+    assert!(cpu.p.z);
+    assert!(!cpu.p.n);
+    assert!(cpu.p.i);
+    assert!(cpu.p.c);
+}
+
+#[test]
+fn cpu_step_executes_xaa_immediate_as_and_of_a_x_and_operand() {
+    let mut cpu = CPU::new();
+    let mut bus = TestBus::new();
+    cpu.pc = 0x0200;
+    cpu.a = 0xFF;
+    cpu.x = 0x9F;
+    cpu.p.i = true;
+    cpu.p.v = true;
+    bus.cpu_write(0x0200, 0x8B);
+    bus.cpu_write(0x0201, 0xCF);
+
+    cpu.clock(&mut bus);
+
+    assert_eq!(cpu.pc, 0x0202);
+    assert_eq!(cpu.cycles, 2);
+    assert_eq!(cpu.a, 0x8F);
+    assert_eq!(cpu.x, 0x9F);
+    assert!(!cpu.p.z);
+    assert!(cpu.p.n);
+    assert!(cpu.p.i);
+    assert!(cpu.p.v);
+}

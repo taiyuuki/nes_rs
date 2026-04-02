@@ -701,3 +701,38 @@ fn accuracy_coin_page_two_addressing_mode_wraparound_passes() {
         failures.join("\n")
     );
 }
+
+#[test]
+#[ignore = "long-running AccuracyCoin page test"]
+fn accuracy_coin_page_eleven_ane_immediate_passes() {
+    const RESULT_ADDRS: [u16; 1] = [0x0414];
+    const RESULT_NAMES: [&str; 1] = ["ANE Immediate"];
+
+    let Some((nes, results)) = run_accuracy_coin_page(10, &RESULT_ADDRS) else {
+        return;
+    };
+
+    let failures: Vec<String> = results
+        .iter()
+        .enumerate()
+        .filter(|(_, result)| result.status != 1)
+        .map(|(index, result)| {
+            format!(
+                "{} @ ${:04X}: raw={:02X} status={} error={:02X}",
+                RESULT_NAMES[index],
+                RESULT_ADDRS[index],
+                result.raw,
+                result.status,
+                result.error_code
+            )
+        })
+        .collect();
+
+    assert!(
+        failures.is_empty(),
+        "AccuracyCoin page 11 ANE immediate test reported failures.\nterminal pc={:04X}, clocks={}\n{}",
+        nes.cpu.pc(),
+        nes.cpu.clocks(),
+        failures.join("\n")
+    );
+}
