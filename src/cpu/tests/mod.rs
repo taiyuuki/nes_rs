@@ -29,3 +29,4 @@ mod addressing;
 mod dma;
 mod execution;
 mod reset;
+mod unofficial;

@@ -145,7 +145,7 @@ const INST_SET: [Inst; 256] = [
     Inst(OpCode::PHP, AddrMode::IMP, 3),
     Inst(OpCode::ORA, AddrMode::IMM, 2),
     Inst(OpCode::ASL, AddrMode::IMP, 2),
-    Inst(OpCode::ANC, AddrMode::IMP, 2),
+    Inst(OpCode::ANC, AddrMode::IMM, 2),
     Inst(OpCode::NOP, AddrMode::ABS, 4),
     Inst(OpCode::ORA, AddrMode::ABS, 4),
     Inst(OpCode::ASL, AddrMode::ABS, 6),
@@ -177,7 +177,7 @@ const INST_SET: [Inst; 256] = [
     Inst(OpCode::PLP, AddrMode::IMP, 4),
     Inst(OpCode::AND, AddrMode::IMM, 2),
     Inst(OpCode::ROL, AddrMode::IMP, 2),
-    Inst(OpCode::ANC, AddrMode::IMP, 2),
+    Inst(OpCode::ANC, AddrMode::IMM, 2),
     Inst(OpCode::BIT, AddrMode::ABS, 4),
     Inst(OpCode::AND, AddrMode::ABS, 4),
     Inst(OpCode::ROL, AddrMode::ABS, 6),
@@ -209,7 +209,7 @@ const INST_SET: [Inst; 256] = [
     Inst(OpCode::PHA, AddrMode::IMP, 3),
     Inst(OpCode::EOR, AddrMode::IMM, 2),
     Inst(OpCode::LSR, AddrMode::IMP, 2),
-    Inst(OpCode::ALR, AddrMode::IMP, 2),
+    Inst(OpCode::ALR, AddrMode::IMM, 2),
     Inst(OpCode::JMP, AddrMode::ABS, 3),
     Inst(OpCode::EOR, AddrMode::ABS, 4),
     Inst(OpCode::LSR, AddrMode::ABS, 6),
@@ -241,7 +241,7 @@ const INST_SET: [Inst; 256] = [
     Inst(OpCode::PLA, AddrMode::IMP, 4),
     Inst(OpCode::ADC, AddrMode::IMM, 2),
     Inst(OpCode::ROR, AddrMode::IMP, 2),
-    Inst(OpCode::ARR, AddrMode::IMP, 2),
+    Inst(OpCode::ARR, AddrMode::IMM, 2),
     Inst(OpCode::JMP, AddrMode::IND, 5),
     Inst(OpCode::ADC, AddrMode::ABS, 4),
     Inst(OpCode::ROR, AddrMode::ABS, 6),
@@ -273,7 +273,7 @@ const INST_SET: [Inst; 256] = [
     Inst(OpCode::DEY, AddrMode::IMP, 2),
     Inst(OpCode::NOP, AddrMode::IMM, 2),
     Inst(OpCode::TXA, AddrMode::IMP, 2),
-    Inst(OpCode::XAA, AddrMode::IMP, 2),
+    Inst(OpCode::XAA, AddrMode::IMM, 2),
     Inst(OpCode::STY, AddrMode::ABS, 4),
     Inst(OpCode::STA, AddrMode::ABS, 4),
     Inst(OpCode::STX, AddrMode::ABS, 4),
@@ -290,10 +290,10 @@ const INST_SET: [Inst; 256] = [
     Inst(OpCode::STA, AddrMode::ABY, 5),
     Inst(OpCode::TXS, AddrMode::IMP, 2),
     Inst(OpCode::TAS, AddrMode::ABY, 5),
-    Inst(OpCode::SHY, AddrMode::IMP, 2),
+    Inst(OpCode::SHY, AddrMode::ABX, 5),
     Inst(OpCode::STA, AddrMode::ABX, 5),
-    Inst(OpCode::SHX, AddrMode::IMP, 2),
-    Inst(OpCode::AHX, AddrMode::IMP, 2),
+    Inst(OpCode::SHX, AddrMode::ABY, 5),
+    Inst(OpCode::AHX, AddrMode::ABY, 5),
     Inst(OpCode::LDY, AddrMode::IMM, 2),
     Inst(OpCode::LDA, AddrMode::IZX, 6),
     Inst(OpCode::LDX, AddrMode::IMM, 2),
@@ -305,7 +305,7 @@ const INST_SET: [Inst; 256] = [
     Inst(OpCode::TAY, AddrMode::IMP, 2),
     Inst(OpCode::LDA, AddrMode::IMM, 2),
     Inst(OpCode::TAX, AddrMode::IMP, 2),
-    Inst(OpCode::LAX, AddrMode::IMP, 2),
+    Inst(OpCode::LAX, AddrMode::IMM, 2),
     Inst(OpCode::LDY, AddrMode::ABS, 4),
     Inst(OpCode::LDA, AddrMode::ABS, 4),
     Inst(OpCode::LDX, AddrMode::ABS, 4),
@@ -321,7 +321,7 @@ const INST_SET: [Inst; 256] = [
     Inst(OpCode::CLV, AddrMode::IMP, 2),
     Inst(OpCode::LDA, AddrMode::ABY, 4),
     Inst(OpCode::TSX, AddrMode::IMP, 2),
-    Inst(OpCode::LAS, AddrMode::IMP, 2),
+    Inst(OpCode::LAS, AddrMode::ABY, 4),
     Inst(OpCode::LDY, AddrMode::ABX, 4),
     Inst(OpCode::LDA, AddrMode::ABX, 4),
     Inst(OpCode::LDX, AddrMode::ABY, 4),
@@ -337,7 +337,7 @@ const INST_SET: [Inst; 256] = [
     Inst(OpCode::INY, AddrMode::IMP, 2),
     Inst(OpCode::CMP, AddrMode::IMM, 2),
     Inst(OpCode::DEX, AddrMode::IMP, 2),
-    Inst(OpCode::AXS, AddrMode::IMP, 2),
+    Inst(OpCode::AXS, AddrMode::IMM, 2),
     Inst(OpCode::CPY, AddrMode::ABS, 4),
     Inst(OpCode::CMP, AddrMode::ABS, 4),
     Inst(OpCode::DEC, AddrMode::ABS, 6),
@@ -1666,9 +1666,10 @@ impl CPU {
 
     // unofficial
     fn ahx(&mut self, addr: u16, bus: &mut impl CPUBus) {
-        let tmp = addr - self.y as u16;
+        let tmp = addr.wrapping_sub(self.y as u16);
         if self.y as u16 + tmp < 0x00FF {
-            let val = self.a & self.x & ((addr >> 8) as u8) + 1;
+            let hi = ((addr >> 8) as u8).wrapping_add(1);
+            let val = self.a & self.x & hi;
             bus.cpu_write(addr, val);
         } else {
             let val = bus.cpu_read(addr);
@@ -1776,8 +1777,9 @@ impl CPU {
 
     fn tas(&mut self, addr: u16, bus: &mut impl CPUBus) {
         self.sp = self.a & self.x;
-        let val = self.sp & (addr >> 8) as u8 + 1;
-        let tmp = addr - self.y as u16;
+        let hi = ((addr >> 8) as u8).wrapping_add(1);
+        let val = self.sp & hi;
+        let tmp = addr.wrapping_sub(self.y as u16);
         if self.y as u16 + tmp <= 0x00FF {
             bus.cpu_write(addr, val);
         } else {
@@ -1793,7 +1795,7 @@ impl CPU {
 
     fn shy(&mut self, addr: u16, bus: &mut impl CPUBus) {
         let hi = ((addr >> 8) + 1) as u8;
-        bus.cpu_write(addr, self.y * hi);
+        bus.cpu_write(addr, self.y & hi);
     }
 }
 
