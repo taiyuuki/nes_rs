@@ -563,7 +563,7 @@ impl PPU {
             self.mask_palette_color(palette_data)
         } else {
             let buffered = self.read_buffer;
-            self.read_buffer = self.ppu_read_bus(bus, addr);
+            self.read_buffer = self.ppu_read_bus_exposed(bus, addr);
             buffered
         };
 
@@ -574,7 +574,7 @@ impl PPU {
 
     fn write_data(&mut self, bus: &mut impl PPUBus, data: u8) {
         let addr = self.loopy_v & 0x3FFF;
-        self.ppu_write_bus(bus, addr, data);
+        self.ppu_write_bus_exposed(bus, addr, data);
         self.increment_data_access_vram_addr();
     }
 
@@ -662,11 +662,11 @@ impl PPU {
             }
             4 => {
                 let addr = self.bg_pattern_addr(self.next_tile_id);
-                self.next_tile_lsb = self.ppu_read_bus(bus, addr);
+                self.next_tile_lsb = self.ppu_read_bus_exposed(bus, addr);
             }
             6 => {
                 let addr = self.bg_pattern_addr(self.next_tile_id).wrapping_add(8);
-                self.next_tile_msb = self.ppu_read_bus(bus, addr);
+                self.next_tile_msb = self.ppu_read_bus_exposed(bus, addr);
             }
             7 => self.increment_x(),
             _ => {}
@@ -917,15 +917,20 @@ impl PPU {
 
     fn ppu_read_bus(&mut self, bus: &mut impl PPUBus, addr: u16) -> u8 {
         let addr = addr & 0x3FFF;
-        if addr < 0x3F00 {
+        bus.ppu_read(addr)
+    }
+
+    fn ppu_read_bus_exposed(&mut self, bus: &mut impl PPUBus, addr: u16) -> u8 {
+        let addr = addr & 0x3FFF;
+        if addr < 0x2000 {
             bus.check_a12(addr, self.dot_clock);
         }
         bus.ppu_read(addr)
     }
 
-    fn ppu_write_bus(&mut self, bus: &mut impl PPUBus, addr: u16, data: u8) {
+    fn ppu_write_bus_exposed(&mut self, bus: &mut impl PPUBus, addr: u16, data: u8) {
         let addr = addr & 0x3FFF;
-        if addr < 0x3F00 {
+        if addr < 0x2000 {
             bus.check_a12(addr, self.dot_clock);
         }
         bus.ppu_write(addr, data);
@@ -968,8 +973,8 @@ impl PPU {
         };
 
         (
-            self.ppu_read_bus(bus, addr),
-            self.ppu_read_bus(bus, addr + 8),
+            self.ppu_read_bus_exposed(bus, addr),
+            self.ppu_read_bus_exposed(bus, addr + 8),
         )
     }
 

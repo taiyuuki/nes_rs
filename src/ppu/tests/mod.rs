@@ -102,6 +102,49 @@ fn palette_ppudata_accesses_do_not_clock_mapper_a12() {
 }
 
 #[test]
+fn chr_ppudata_accesses_still_clock_mapper_a12() {
+    let mut ppu = PPU::new();
+    let mut bus = TestPPUBus::new();
+
+    ppu.cpu_write_register(&mut bus, 0x2006, 0x10);
+    ppu.cpu_write_register(&mut bus, 0x2006, 0x00);
+    let _ = ppu.cpu_read_register(&mut bus, 0x2007);
+
+    ppu.cpu_write_register(&mut bus, 0x2006, 0x00);
+    ppu.cpu_write_register(&mut bus, 0x2006, 0x10);
+    ppu.cpu_write_register(&mut bus, 0x2007, 0x17);
+
+    assert_eq!(bus.a12_log, vec![0x1000, 0x0010]);
+}
+
+#[test]
+fn rendered_nametable_and_attribute_fetches_do_not_clock_mapper_a12() {
+    let mut ppu = PPU::new();
+    let mut bus = TestPPUBus::new();
+
+    ppu.cpu_write_register(&mut bus, 0x2000, CTRL_BG_TABLE);
+    ppu.cpu_write_register(&mut bus, 0x2001, MASK_SHOW_BG | MASK_SHOW_BG_LEFTMOST);
+
+    bus.mem[0x2000] = 0x01;
+    bus.mem[0x23C0] = 0x00;
+    bus.mem[0x1010] = 0x80;
+    bus.mem[0x1018] = 0x00;
+    bus.mem[0x3F00] = 0x09;
+    bus.mem[0x3F01] = 0x12;
+
+    run_ppu_cycles(&mut ppu, &mut bus, 341 + 1);
+
+    assert!(bus.read_log.contains(&0x2000));
+    assert!(bus.read_log.contains(&0x23C0));
+    assert!(bus.a12_log.contains(&0x1010));
+    assert!(bus.a12_log.contains(&0x1018));
+    assert!(
+        bus.a12_log.iter().all(|&addr| addr < 0x2000),
+        "rendered nametable and attribute fetches should not be exposed to mapper A12 tracking"
+    );
+}
+
+#[test]
 fn rendered_palette_reads_do_not_clock_mapper_a12() {
     let mut ppu = PPU::new();
     let mut bus = TestPPUBus::new();
@@ -124,6 +167,29 @@ fn rendered_palette_reads_do_not_clock_mapper_a12() {
     assert!(
         bus.a12_log.iter().all(|&addr| addr < 0x3F00),
         "palette fetches must not reach mapper A12 tracking"
+    );
+}
+
+#[test]
+fn sprite_garbage_nametable_fetches_do_not_clock_mapper_a12() {
+    let mut ppu = PPU::new();
+    let mut bus = TestPPUBus::new();
+
+    ppu.cpu_write_register(&mut bus, 0x2000, CTRL_SPRITE_TABLE);
+    ppu.cpu_write_register(&mut bus, 0x2001, MASK_SHOW_SPRITES);
+    set_sprite(&mut ppu.oam, 0, 0xFF, 0x01, 0x00, 8);
+    ppu.scanline = 261;
+    ppu.cycles = 256;
+
+    for _ in 0..8 {
+        ppu.clock(&mut bus);
+    }
+
+    assert!(bus.read_log.contains(&0x2000));
+    assert!(bus.a12_log.contains(&0x1010));
+    assert!(
+        bus.a12_log.iter().all(|&addr| addr < 0x2000),
+        "sprite-phase garbage nametable fetches should stay invisible to mapper A12 tracking"
     );
 }
 

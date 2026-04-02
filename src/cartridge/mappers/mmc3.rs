@@ -8,16 +8,6 @@ const CHR_BANK_LEN_1K: usize = 0x0400;
 // MMC3 boards only clock the scanline counter after A12 stays low long enough to
 // filter out short sprite/prefetch pulses.
 const A12_LOW_FILTER_PPU_CYCLES: u64 = 10;
-// Compatibility guard:
-// Super Contra stage 1 boss exposed extra A12-qualified clocks inside a single
-// scanline-sized window. Until the PPU/MMC3 interaction is modeled more
-// cycle-accurately, suppress duplicate IRQ clocks that occur too soon after the
-// previous accepted edge.
-//
-// TODO: Replace this spacing guard with a stricter model of MMC3-visible PPU bus
-// activity so scanline IRQ qualification comes from hardware-accurate fetch
-// timing instead of a conservative compatibility heuristic.
-const IRQ_CLOCK_MIN_SPACING_PPU_CYCLES: u64 = 200;
 
 enum ChrMemory {
     Rom(Vec<u8>),
@@ -40,7 +30,6 @@ pub(super) struct Mmc3 {
     irq_line: bool,
     last_a12: bool,
     a12_fall_cycle: u64,
-    last_irq_clock_cycle: Option<u64>,
 }
 
 impl Mmc3 {
@@ -67,7 +56,6 @@ impl Mmc3 {
             irq_line: false,
             last_a12: false,
             a12_fall_cycle: 0,
-            last_irq_clock_cycle: None,
         }
     }
 
@@ -172,7 +160,6 @@ impl Mmc3 {
         if self.irq_counter == 0 && self.irq_enabled {
             self.irq_line = true;
         }
-        self.last_irq_clock_cycle = Some(ppu_cycle);
 
         if self.irq_enabled || self.irq_line || reload_pending {
             Self::trace_mmc3(format_args!(
@@ -342,17 +329,13 @@ impl Mapper for Mmc3 {
             self.a12_fall_cycle = ppu_cycle;
         } else if a12 && !self.last_a12 {
             let low_span = ppu_cycle.saturating_sub(self.a12_fall_cycle);
-            let clock_spacing_ok = self.last_irq_clock_cycle.is_none_or(|last| {
-                ppu_cycle.saturating_sub(last) >= IRQ_CLOCK_MIN_SPACING_PPU_CYCLES
-            });
-            if low_span >= A12_LOW_FILTER_PPU_CYCLES && clock_spacing_ok {
+            if low_span >= A12_LOW_FILTER_PPU_CYCLES {
                 self.clock_irq_counter(ppu_cycle);
             } else {
                 Self::trace_mmc3_verbose(format_args!(
-                    "a12-ignore ppu={} low_span={} spacing_ok={} addr={:04X} counter={} latch={} reload_pending={} enabled={}",
+                    "a12-ignore ppu={} low_span={} addr={:04X} counter={} latch={} reload_pending={} enabled={}",
                     ppu_cycle,
                     low_span,
-                    clock_spacing_ok,
                     addr,
                     self.irq_counter,
                     self.irq_latch,
@@ -395,8 +378,8 @@ impl Mapper for Mmc3 {
         writer.write_bool(self.irq_line);
         writer.write_bool(self.last_a12);
         writer.write_u64(self.a12_fall_cycle);
-        writer.write_bool(self.last_irq_clock_cycle.is_some());
-        writer.write_u64(self.last_irq_clock_cycle.unwrap_or_default());
+        writer.write_bool(false);
+        writer.write_u64(0);
     }
 
     fn load_state(&mut self, reader: &mut StateReader<'_>) -> Result<(), SaveStateError> {
@@ -430,12 +413,8 @@ impl Mapper for Mmc3 {
         self.irq_line = reader.read_bool()?;
         self.last_a12 = reader.read_bool()?;
         self.a12_fall_cycle = reader.read_u64()?;
-        self.last_irq_clock_cycle = if reader.read_bool()? {
-            Some(reader.read_u64()?)
-        } else {
-            let _ = reader.read_u64()?;
-            None
-        };
+        let _ = reader.read_bool()?;
+        let _ = reader.read_u64()?;
         Ok(())
     }
 }

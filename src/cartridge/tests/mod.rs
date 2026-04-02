@@ -364,30 +364,3 @@ fn mmc3_filters_eight_cycle_low_periods_between_sparse_sprite_fetches() {
     cartridge.check_a12(0x1000, 26);
     assert!(cartridge.irq_line());
 }
-
-#[test]
-fn mmc3_ignores_extra_a12_rises_within_the_same_scanline_window() {
-    let prg_rom = vec![0xEA; 2 * PRG_BANK_LEN];
-    let chr_rom = vec![0x55; CHR_BANK_LEN];
-    let rom = make_ines_with_flags(&prg_rom, &chr_rom, 0x40);
-    let mut cartridge = Cartridge::from_ines(&rom).expect("valid MMC3 should parse");
-
-    assert!(cartridge.cpu_write(0xC000, 0x01));
-    assert!(cartridge.cpu_write(0xC001, 0x00));
-    assert!(cartridge.cpu_write(0xE001, 0x00));
-
-    cartridge.check_a12(0x0000, 0);
-    cartridge.check_a12(0x1000, 10);
-    assert!(!cartridge.irq_line());
-
-    cartridge.check_a12(0x0000, 30);
-    cartridge.check_a12(0x1000, 50);
-    assert!(
-        !cartridge.irq_line(),
-        "extra A12 rises inside the same scanline-sized window should be ignored"
-    );
-
-    cartridge.check_a12(0x0000, 341);
-    cartridge.check_a12(0x1000, 351);
-    assert!(cartridge.irq_line());
-}

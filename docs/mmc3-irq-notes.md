@@ -6,28 +6,20 @@ The current MMC3 implementation is good enough to boot and render `SuperContra(U
 correctly through the stage 1 boss scene, including the split-screen section that was
 previously jittering.
 
-Two fixes were required:
+The current fix has two parts:
 
 1. Filter A12 rises using a low-time requirement.
-2. Suppress duplicate IRQ clocks that occur within the same scanline-sized window.
+2. Only expose CHR/pattern-table accesses to MMC3 A12 tracking during rendering.
 
-The second rule is intentionally documented as a compatibility guard, not as the final
-hardware model.
-
-## Why the spacing guard exists
+## Why this fixes the remaining jitter
 
 Tracing the boss scene in `SuperContra(U).nes` showed accepted `a12-clock` events only
-`40` PPU cycles apart while IRQs were enabled. That is too short to represent separate
-scanlines and caused the lower split to jitter.
+`40` PPU cycles apart while IRQs were enabled. The root cause was not the MMC3 counter
+itself, but that the emulator was feeding mapper A12 with nametable/attribute/garbage
+fetches that should not qualify as MMC3-visible CHR activity.
 
-The current code therefore rejects accepted MMC3 IRQ clocks that occur within
-`IRQ_CLOCK_MIN_SPACING_PPU_CYCLES` of the previous accepted clock.
-
-## Follow-up target
-
-Long-term, the spacing guard should be replaced by a more exact model of which PPU bus
-accesses are externally visible to MMC3 and therefore eligible to clock the scanline
-counter.
+Restricting mapper-visible A12 tracking to CHR/pattern accesses removes those duplicate
+same-scanline clocks without relying on a scanline-sized spacing heuristic.
 
 ## Regression checklist
 
