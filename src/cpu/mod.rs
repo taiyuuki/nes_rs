@@ -680,11 +680,9 @@ impl CPU {
     fn store_cycle_offset(mode: AddrMode) -> u8 {
         match mode {
             AddrMode::ZP0 => 2,
-            AddrMode::ZPX | AddrMode::ZPY => 3,
-            AddrMode::ABS => 3,
+            AddrMode::ZPX | AddrMode::ZPY | AddrMode::ABS => 3,
             AddrMode::ABX | AddrMode::ABY => 4,
-            AddrMode::IZX => 5,
-            AddrMode::IZY => 5,
+            AddrMode::IZX | AddrMode::IZY => 5,
             _ => 0,
         }
     }
@@ -692,8 +690,7 @@ impl CPU {
     fn rmw_cycle_offsets(mode: AddrMode) -> (u8, u8, u8) {
         match mode {
             AddrMode::ZP0 => (2, 3, 4),
-            AddrMode::ZPX => (3, 4, 5),
-            AddrMode::ABS => (3, 4, 5),
+            AddrMode::ZPX | AddrMode::ABS => (3, 4, 5),
             AddrMode::ABX => (5, 6, 7),
             _ => (0, 0, 0),
         }
@@ -1712,16 +1709,18 @@ impl CPU {
     }
 
     fn arr(&mut self, addr: u16, bus: &mut impl CPUBus) {
-        let f: u8 = if self.p.c { 0x80 } else { 0 };
-        self.a = (bus.cpu_read(addr) & self.a) >> 1 | f;
+        let old_c = self.p.c as u8 * 0x80;
+        let and_result = bus.cpu_read(addr) & self.a;
+        self.a = (and_result >> 1) | old_c;
         self.set_zn(self.a);
+
         self.p.c = self.a & 0x40 != 0;
-        self.p.v = self.p.c != ((self.a & 0x20) != 0);
+        self.p.v = ((self.a & 0x40) != 0) != ((self.a & 0x20) != 0); // 第6位和第5位的XOR
     }
 
     fn las(&mut self, addr: u16, bus: &mut impl CPUBus) {
-        let val = bus.cpu_read(addr);
-        self.sp &= val;
+        let val = bus.cpu_read(addr) & self.sp;
+        self.sp = val;
         self.a = val;
         self.x = val;
         self.set_zn(val);
