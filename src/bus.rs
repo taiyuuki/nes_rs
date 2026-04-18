@@ -222,6 +222,10 @@ impl NESBus {
         &self.ppu
     }
 
+    pub fn add_expansion_audio_chip(&mut self, chip: Box<dyn crate::apu::ExpansionAudioChip>) {
+        self.apu.add_expansion_chip(chip);
+    }
+
     pub fn set_controller_state(&mut self, port: usize, state: ControllerState) {
         if let Some(controller) = self.controllers.get_mut(port) {
             controller.set_state(state);
@@ -270,26 +274,23 @@ impl NESBus {
     }
 
     pub fn tick_apu_cpu_cycle(&mut self) {
-        // self.apu.tick_cpu_cycle();
+        self.apu.tick_cpu_cycle();
     }
 
     pub fn apu_sample_rate(&self) -> u32 {
-        // self.apu.sample_rate()
-        0
+        self.apu.sample_rate()
     }
 
     pub fn apu_audio_samples(&self) -> &[f32] {
-        // self.apu.audio_samples()
-        &[0.0]
+        self.apu.audio_samples()
     }
 
     pub fn clear_apu_audio_samples(&mut self) {
-        // self.apu.clear_audio_samples();
+        self.apu.clear_audio_samples();
     }
 
     pub fn apu_irq_line(&self) -> bool {
-        // self.apu.irq_line()
-        false
+        self.apu.irq_line()
     }
 
     pub fn cartridge_irq_line(&self) -> bool {
@@ -309,7 +310,7 @@ impl NESBus {
         writer.write_bytes(&self.ram);
         self.ppu.save_state(writer);
         self.ppu_memory.save_state(writer)?;
-        // self.apu.save_state(writer);
+        self.apu.save_state(writer);
         self.dma.save_state(writer);
         for controller in &self.controllers {
             controller.save_state(writer);
@@ -325,7 +326,7 @@ impl NESBus {
         reader.read_bytes_into(&mut self.ram)?;
         self.ppu.load_state(reader)?;
         self.ppu_memory.load_state(reader)?;
-        // self.apu.load_state(reader)?;
+        self.apu.load_state(reader)?;
         self.dma.load_state(reader)?;
         for controller in &mut self.controllers {
             controller.load_state(reader)?;
@@ -343,12 +344,11 @@ impl NESBus {
     }
 
     pub(crate) fn take_dmc_dma_request(&mut self) -> Option<crate::apu::DmcDmaRequest> {
-        // self.apu.take_dmc_dma_request()
-        None
+        self.apu.take_dmc_dma_request()
     }
 
     pub(crate) fn submit_dmc_dma_sample(&mut self, data: u8) {
-        // self.apu.submit_dmc_dma_sample(data);
+        self.apu.submit_dmc_dma_sample(data);
     }
 
     fn latched_cpu_read(&mut self, data: u8) -> u8 {
@@ -366,7 +366,11 @@ impl NESBus {
                     ppu.cpu_read_register_timed(ppu_memory, 0x2000 | (addr & 0x0007), cycle_offset);
                 self.latched_cpu_read(data)
             }
-            0x4015 => self.cpu_open_bus & 0x02, // self.apu.read_status_at_offset(cycle_offset) | (self.cpu_open_bus & 0x20),
+            0x4015 => {
+                let data =
+                    self.apu.read_status_at_offset(cycle_offset) | (self.cpu_open_bus & 0x20);
+                self.latched_cpu_read(data)
+            }
             0x4016 => {
                 let data = (self.cpu_open_bus & 0xE0) | self.controllers[0].read();
                 self.latched_cpu_read(data)
@@ -402,12 +406,12 @@ impl NESBus {
                 );
             }
             0x4014 => self.dma.request_oam_dma(data),
-            0x4000..=0x4013 | 0x4015 => {} //self.apu.write_register_at_offset(addr, data, cycle_offset),
+            0x4000..=0x4013 | 0x4015 => self.apu.write_register_at_offset(addr, data, cycle_offset),
             0x4016 => {
                 self.controllers[0].write(data);
                 self.controllers[1].write(data);
             }
-            0x4017 => {} //self.apu.write_register_at_offset(addr, data, cycle_offset),
+            0x4017 => self.apu.write_register_at_offset(addr, data, cycle_offset),
             0x4020..=0xFFFF => {
                 let _ = self.ppu_memory.cartridge_cpu_write(addr, data);
             }

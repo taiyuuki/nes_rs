@@ -11,6 +11,7 @@ pub mod runtime;
 pub mod savestate;
 pub mod video;
 
+pub use apu::ExpansionAudioChip;
 pub use api::{
     AudioBatch, CoreCommand, CoreEvent, CoreResponse, CpuDebugSnapshot, DebugSnapshot, PixelFormat,
     PpuDebugSnapshot, VIDEO_FRAME_PITCH, VideoFrame,
@@ -167,6 +168,10 @@ impl NES {
             sample_rate: self.bus.apu_sample_rate(),
             samples: self.bus.apu_audio_samples(),
         }
+    }
+
+    pub fn add_expansion_audio_chip(&mut self, chip: Box<dyn ExpansionAudioChip>) {
+        self.bus.add_expansion_audio_chip(chip);
     }
 
     pub fn debug_snapshot(&self) -> DebugSnapshot {
