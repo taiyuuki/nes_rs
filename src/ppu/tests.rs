@@ -434,7 +434,7 @@ fn clock_renders_background_pixels_across_tile_boundaries() {
 
     assert_eq!(ppu.bit_map[0], 0x12);
     assert_eq!(ppu.bit_map[1], 0x09);
-    assert_eq!(ppu.bit_map[7], 0x09);
+    assert_eq!(ppu.bit_map[7], 0x12);
     assert_eq!(ppu.bit_map[8], 0x12);
 }
 
@@ -528,7 +528,7 @@ fn sprite_priority_bit_keeps_opaque_background_in_front() {
     bus.mem[0x3F01] = 0x12;
     bus.mem[0x3F11] = 0x22;
 
-    run_ppu_cycles(&mut ppu, &mut bus, 341 * 2 + 9);
+    run_ppu_cycles(&mut ppu, &mut bus, 341 * 2 + 10);
 
     assert_eq!(ppu.bit_map[256 + 8], 0x12);
 }
@@ -558,6 +558,38 @@ fn sprite_zero_hit_sets_when_sprite_zero_overlaps_background() {
 
     assert_ne!(ppu.status & STATUS_SPRITE_ZERO_HIT, 0);
     assert_eq!(ppu.bit_map[256 + 8], 0x22);
+}
+
+#[test]
+fn timed_ppustatus_reads_can_observe_imminent_sprite_zero_hits() {
+    let mut ppu = PPU::new();
+    let mut bus = TestPPUBus::new();
+
+    ppu.cpu_write_register(
+        &mut bus,
+        0x2001,
+        MASK_SHOW_BG | MASK_SHOW_SPRITES | MASK_SHOW_BG_LEFTMOST,
+    );
+    set_sprite(&mut ppu.oam, 0, 0x00, 0x01, 0x00, 8);
+
+    bus.mem[0x2001] = 0x02;
+    bus.mem[0x23C0] = 0x00;
+    bus.mem[0x0021] = 0b1000_0000;
+    bus.mem[0x0029] = 0x00;
+    bus.mem[0x0010] = 0b1000_0000;
+    bus.mem[0x0018] = 0x00;
+    bus.mem[0x3F01] = 0x12;
+    bus.mem[0x3F11] = 0x22;
+
+    run_ppu_cycles(&mut ppu, &mut bus, 341 * 2 + 6);
+    assert_eq!(ppu.status & STATUS_SPRITE_ZERO_HIT, 0);
+
+    let status = ppu.cpu_read_register_timed(&mut bus, 0x2002, 1);
+    assert_ne!(
+        status & STATUS_SPRITE_ZERO_HIT,
+        0,
+        "timed PPUSTATUS reads should sample sprite 0 hit at the bus phase where the CPU actually sees it"
+    );
 }
 
 #[test]

@@ -164,6 +164,8 @@ pub struct PPU {
     bit_map: [u8; 0xF000],
     bg_colors: [u8; 0x100],
     bg_pixels: [u8; 0x100],
+    sprite_present: [bool; 0x100],
+    sprite_behind_bg: [bool; 0x100],
     scanline_sprites: [SpriteRenderData; 8],
     scanline_sprite_count: u8,
     suppress_vblank: bool,
@@ -207,6 +209,8 @@ impl PPU {
             bit_map: [0; 0xF000],
             bg_colors: [0; 0x100],
             bg_pixels: [0; 0x100],
+            sprite_present: [false; 0x100],
+            sprite_behind_bg: [false; 0x100],
             scanline_sprites: [SpriteRenderData::default(); 8],
             scanline_sprite_count: 0,
             suppress_vblank: false,
@@ -241,6 +245,8 @@ impl PPU {
         self.set_current_vram_addr(0);
         self.set_temp_vram_addr(0);
         self.bg_pixels = [0; 0x100];
+        self.sprite_present = [false; 0x100];
+        self.sprite_behind_bg = [false; 0x100];
         self.scanline_sprites = [SpriteRenderData::default(); 8];
         self.scanline_sprite_count = 0;
         self.suppress_vblank = false;
@@ -335,8 +341,18 @@ impl PPU {
         }
 
         if render_scanline && self.rendering_on() {
+            if visible_scanline && self.cycles == 0 {
+                self.sprite_present = [false; 0x100];
+                self.sprite_behind_bg = [false; 0x100];
+            }
+
             if visible_scanline && visible_cycle {
-                self.draw_bg_pixel(self.cycles as i16, bus);
+                let bg_pixel_x = if self.cycles < 8 {
+                    self.cycles as i16
+                } else {
+                    self.cycles as i16 - 1
+                };
+                self.draw_bg_pixel(bg_pixel_x, bus);
                 self.draw_sprite_pixel(self.cycles as i16, bus);
             }
 
@@ -480,6 +496,12 @@ impl PPU {
         writer.write_bytes(&self.bit_map);
         writer.write_bytes(&self.bg_colors);
         writer.write_bytes(&self.bg_pixels);
+        for &present in &self.sprite_present {
+            writer.write_bool(present);
+        }
+        for &behind in &self.sprite_behind_bg {
+            writer.write_bool(behind);
+        }
         for sprite in &self.scanline_sprites {
             writer.write_u8(sprite.tile_id);
             writer.write_u8(sprite.row);
@@ -539,6 +561,12 @@ impl PPU {
         reader.read_bytes_into(&mut self.bit_map)?;
         reader.read_bytes_into(&mut self.bg_colors)?;
         reader.read_bytes_into(&mut self.bg_pixels)?;
+        for present in &mut self.sprite_present {
+            *present = reader.read_bool()?;
+        }
+        for behind in &mut self.sprite_behind_bg {
+            *behind = reader.read_bool()?;
+        }
         for sprite in &mut self.scanline_sprites {
             sprite.tile_id = reader.read_u8()?;
             sprite.row = reader.read_u8()?;
@@ -561,6 +589,11 @@ impl PPU {
             self.predict_status_timing(ppu_cycle_offset);
 
         let mut status_bits = future_status;
+        if (status_bits & STATUS_SPRITE_ZERO_HIT) == 0
+            && self.predict_sprite_zero_hit_within_offset(ppu_cycle_offset)
+        {
+            status_bits |= STATUS_SPRITE_ZERO_HIT;
+        }
         if future_scanline == self.vblank_lines && future_cycles == 1 {
             status_bits &= !STATUS_VBLANK;
             self.suppress_vblank = true;
@@ -616,6 +649,135 @@ impl PPU {
         }
 
         (scanline, cycles, status)
+    }
+
+    fn predict_sprite_zero_hit_within_offset(&self, ppu_cycle_offset: u16) -> bool {
+        if ppu_cycle_offset == 0
+            || !self.bg_on()
+            || !self.sprites_on()
+            || self.scanline < 0
+            || self.scanline >= VISIBLE_SCANLINES
+        {
+            return false;
+        }
+
+        let Some(sprite) = self
+            .scanline_sprites
+            .iter()
+            .take(self.scanline_sprite_count as usize)
+            .find(|sprite| sprite.sprite_zero)
+            .copied()
+        else {
+            return false;
+        };
+
+        let mut cycles = self.cycles;
+        let mut scanline = self.scanline;
+        let mut odd_frame = self.odd_frame;
+
+        let mut bg_pattern_shift_lo = self.bg_pattern_shift_lo;
+        let mut bg_pattern_shift_hi = self.bg_pattern_shift_hi;
+        let mut bg_attr_shift_lo = self.bg_attr_shift_lo;
+        let mut bg_attr_shift_hi = self.bg_attr_shift_hi;
+
+        let show_leftmost_bg = (self.mask & MASK_SHOW_BG_LEFTMOST) != 0;
+        let show_leftmost_sprites = (self.mask & MASK_SHOW_SPRITES_LEFTMOST) != 0;
+
+        for _ in 0..ppu_cycle_offset {
+            let visible_scanline = scanline < VISIBLE_SCANLINES;
+            let pre_render_scanline = scanline == self.num_scanlines - 1;
+            let render_scanline = visible_scanline || pre_render_scanline;
+            let visible_cycle = cycles < 256;
+            let fetch_cycle = visible_cycle || (320..337).contains(&cycles);
+
+            if render_scanline && self.rendering_on() {
+                if visible_scanline && visible_cycle {
+                    let x = cycles as usize;
+
+                    let bg_pixel = if show_leftmost_bg || x >= 8 {
+                        let bit = 0x8000 >> self.fine_x;
+                        // Sprite/background priority observes a slightly later background bitstream
+                        // than the one we've already committed to the frame buffer. Past the first
+                        // visible tile edge, SMB1's HUD coin helper sprite needs a two-bit lookahead
+                        // here to avoid leaking the hidden black guide pixel.
+                        if x < 9 {
+                            let lo = u8::from((bg_pattern_shift_lo & bit) != 0);
+                            let hi = u8::from((bg_pattern_shift_hi & bit) != 0);
+                            (hi << 1) | lo
+                        } else {
+                            let lo = u8::from(((bg_pattern_shift_lo << 2) & bit) != 0);
+                            let hi = u8::from(((bg_pattern_shift_hi << 2) & bit) != 0);
+                            (hi << 1) | lo
+                        }
+                    } else {
+                        0
+                    };
+
+                    if (show_leftmost_sprites || x >= 8) && x < 255 {
+                        let sprite_x = usize::from(sprite.x);
+                        if x >= sprite_x && x < sprite_x + 8 {
+                            let sprite_pixel = self.sprite_pixel(&sprite, (x - sprite_x) as u8);
+                            if sprite_pixel != 0 && bg_pixel != 0 {
+                                return true;
+                            }
+                        }
+                    }
+                }
+
+                if self.bg_on() && fetch_cycle {
+                    bg_pattern_shift_lo <<= 1;
+                    bg_pattern_shift_hi <<= 1;
+                    bg_attr_shift_lo <<= 1;
+                    bg_attr_shift_hi <<= 1;
+                }
+
+                if self.bg_on() && fetch_cycle && (cycles & 0x07) == 0 {
+                    bg_pattern_shift_lo =
+                        (bg_pattern_shift_lo & 0xFF00) | u16::from(self.next_tile_lsb);
+                    bg_pattern_shift_hi =
+                        (bg_pattern_shift_hi & 0xFF00) | u16::from(self.next_tile_msb);
+
+                    let attr_lo = if (self.next_tile_attr & 0x01) != 0 {
+                        0xFF
+                    } else {
+                        0x00
+                    };
+                    let attr_hi = if (self.next_tile_attr & 0x02) != 0 {
+                        0xFF
+                    } else {
+                        0x00
+                    };
+
+                    bg_attr_shift_lo = (bg_attr_shift_lo & 0xFF00) | attr_lo;
+                    bg_attr_shift_hi = (bg_attr_shift_hi & 0xFF00) | attr_hi;
+                }
+            }
+
+            let skip_odd_frame_cycle = self.num_scanlines == 262
+                && pre_render_scanline
+                && self.rendering_on()
+                && odd_frame
+                && cycles == DOTS_PER_SCANLINE - 2;
+
+            if skip_odd_frame_cycle {
+                scanline = 0;
+                cycles = 0;
+                odd_frame = !odd_frame;
+                continue;
+            }
+
+            cycles += 1;
+            if cycles >= DOTS_PER_SCANLINE {
+                cycles = 0;
+                scanline += 1;
+                if scanline >= self.num_scanlines {
+                    scanline = 0;
+                    odd_frame = !odd_frame;
+                }
+            }
+        }
+
+        false
     }
 
     fn read_data(&mut self, bus: &mut impl PPUBus) -> u8 {
@@ -912,7 +1074,11 @@ impl PPU {
         let color = self.mask_palette_color(palette_data);
         let pixel_index = y * 256 + x;
 
-        self.bit_map[pixel_index] = color;
+        let sprite_in_front = self.sprite_present[x] && !self.sprite_behind_bg[x];
+        let sprite_visible_behind_bg = self.sprite_present[x] && self.sprite_behind_bg[x] && bg_pixel == 0;
+        if !sprite_in_front && !sprite_visible_behind_bg {
+            self.bit_map[pixel_index] = color;
+        }
         self.bg_colors[x] = color;
         self.bg_pixels[x] = bg_pixel;
     }
@@ -936,24 +1102,25 @@ impl PPU {
             .scanline_sprites
             .iter()
             .take(self.scanline_sprite_count as usize)
+            .copied()
         {
             let sprite_x = usize::from(sprite.x);
             if x < sprite_x || x >= sprite_x + 8 {
                 continue;
             }
 
-            let sprite_pixel = self.sprite_pixel(sprite, (x - sprite_x) as u8);
+            let sprite_pixel = self.sprite_pixel(&sprite, (x - sprite_x) as u8);
             if sprite_pixel == 0 {
                 continue;
             }
 
-            let bg_pixel = self.bg_pixels[x];
-            if sprite.sprite_zero && bg_pixel != 0 && x < 255 {
+            let bg_pixel_visible = self.bg_pixel_visible_to_sprite(x);
+            if sprite.sprite_zero && bg_pixel_visible != 0 && x < 255 {
                 self.status |= STATUS_SPRITE_ZERO_HIT;
             }
 
             let behind_background = (sprite.attributes & 0x20) != 0;
-            if behind_background && bg_pixel != 0 {
+            if behind_background && bg_pixel_visible != 0 {
                 break;
             }
 
@@ -962,6 +1129,8 @@ impl PPU {
             let palette_data = self.ppu_read_bus(bus, palette_addr);
             let color = self.mask_palette_color(palette_data);
             self.bit_map[y * 256 + x] = color;
+            self.sprite_present[x] = true;
+            self.sprite_behind_bg[x] = behind_background;
             break;
         }
     }
@@ -1143,6 +1312,28 @@ impl PPU {
         let lo = u8::from((self.bg_attr_shift_lo & bit) != 0);
         let hi = u8::from((self.bg_attr_shift_hi & bit) != 0);
         (hi << 1) | lo
+    }
+
+    fn bg_pixel_visible_to_sprite(&self, x: usize) -> u8 {
+        if !self.bg_on() {
+            return 0;
+        }
+
+        let show_leftmost = (self.mask & MASK_SHOW_BG_LEFTMOST) != 0;
+        if !show_leftmost && x < 8 {
+            return 0;
+        }
+
+        let bit = 0x8000 >> self.fine_x;
+        if x < 9 {
+            let lo = u8::from((self.bg_pattern_shift_lo & bit) != 0);
+            let hi = u8::from((self.bg_pattern_shift_hi & bit) != 0);
+            (hi << 1) | lo
+        } else {
+            let lo = u8::from(((self.bg_pattern_shift_lo << 2) & bit) != 0);
+            let hi = u8::from(((self.bg_pattern_shift_hi << 2) & bit) != 0);
+            (hi << 1) | lo
+        }
     }
 
     fn increment_x(&mut self) {

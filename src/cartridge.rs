@@ -128,6 +128,7 @@ fn decode_mirroring(flags6: u8) -> Mirroring {
     Mirroring::Horizontal
 }
 
+#[allow(dead_code)]
 struct CartridgeHeader {
     raw: Vec<u8>,
     format: RomFormat,

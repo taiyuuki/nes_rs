@@ -1,6 +1,6 @@
 use super::{
     ControllerButton, ControllerState, CoreCommand, CoreEvent, FrontendInput, FrontendRuntime, NES,
-    RunMode, TVSystem,
+    RunMode,
 };
 use crate::bus::CPUBus;
 use crate::headless::{frame_to_ppm, stable_byte_hash, write_frame_ppm};
@@ -167,6 +167,35 @@ fn boot_rom(path: &str, frames: usize) -> Option<NES> {
     }
 
     Some(nes)
+}
+
+#[test]
+fn smb1_hud_coin_does_not_leak_hidden_black_helper_pixel() {
+    let Some(mut nes) = boot_rom("roms/nrom/Super Mario Bros. (W) [!].nes", 120) else {
+        return;
+    };
+
+    tap_controller_buttons(&mut nes, &[ControllerButton::Start]);
+    for _ in 0..240 {
+        nes.run_frame();
+    }
+
+    let frame = nes.frame_pixels();
+    assert_eq!(
+        frame[30 * 256 + 89],
+        0x22,
+        "the sky pixel immediately left of the HUD coin should stay blue instead of leaking sprite 0's black guide pixel"
+    );
+    assert_eq!(
+        frame[30 * 256 + 91],
+        0x17,
+        "the coin body should still render after the left-adjacent sky pixel"
+    );
+    assert_eq!(
+        frame[30 * 256 + 90],
+        0x17,
+        "the lower-left coin edge should remain part of the coin instead of turning into a leaked black helper pixel"
+    );
 }
 
 fn visible_frame_has_non_background_content(nes: &NES) -> bool {
