@@ -1,6 +1,6 @@
 use crate::{
     AudioBatch, CartridgeError, ControllerState, CoreCommand, DebugSnapshot, NES, SaveStateError,
-    TVSystem, VideoFrame,
+    VideoFrame,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

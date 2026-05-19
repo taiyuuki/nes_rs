@@ -1,6 +1,12 @@
 use crate::apu::{DmcDmaKind, DmcDmaRequest};
-use crate::bus::NESBus;
 use crate::savestate::{SaveStateError, StateReader, StateWriter};
+
+pub trait DmaBus {
+    fn dma_read(&mut self, addr: u16) -> u8;
+    fn dma_write_oam(&mut self, data: u8);
+    fn take_dmc_dma_request(&mut self) -> Option<DmcDmaRequest>;
+    fn submit_dmc_dma_sample(&mut self, data: u8);
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CpuSlotPhase {
@@ -101,7 +107,7 @@ impl DmaController {
         self.pending_oam.is_some() || self.active_oam.is_some() || self.active_dmc.is_some()
     }
 
-    pub fn tick_cpu_cycle(&mut self, bus: &mut NESBus) -> bool {
+    pub fn tick_cpu_cycle(&mut self, bus: &mut impl DmaBus) -> bool {
         if self.active_dmc.is_none() {
             if let Some(request) = bus.take_dmc_dma_request() {
                 self.active_dmc = Some(DmcDma::new(request));

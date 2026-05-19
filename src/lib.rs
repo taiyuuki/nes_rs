@@ -7,6 +7,7 @@ mod dma;
 pub mod headless;
 mod input;
 mod ppu;
+mod ppu_memory;
 pub mod runtime;
 pub mod savestate;
 pub mod video;

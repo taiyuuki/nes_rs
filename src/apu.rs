@@ -4,12 +4,6 @@ const CPU_CLOCK_NTSC: f64 = 1_789_773.0;
 const CPU_CLOCK_NTSC_F32: f32 = 1_789_773.0;
 const DEFAULT_SAMPLE_RATE: u32 = 44_100;
 const FRAME_SEQUENCER_DIVIDER: u16 = 7_456;
-const DUTY_TABLE: [[u8; 8]; 4] = [
-    [0, 1, 0, 0, 0, 0, 0, 0],
-    [0, 1, 1, 0, 0, 0, 0, 0],
-    [0, 1, 1, 1, 1, 0, 0, 0],
-    [1, 0, 0, 1, 1, 1, 1, 1],
-];
 const LENGTH_TABLE: [u8; 32] = [
     10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14, 12, 16, 24, 18, 48, 20, 96, 22,
     192, 24, 72, 26, 16, 28, 32, 30,
@@ -160,22 +154,6 @@ impl PulseChannel {
         } else {
             self.envelope_decay
         }
-    }
-
-    fn output(&self) -> u8 {
-        if !self.enabled
-            || self.length_counter == 0
-            || self.timer_reload < 8
-            || self.timer_reload > 0x07FF
-            || self.sweep_mute
-        {
-            return 0;
-        }
-        let duty_value = DUTY_TABLE[self.duty as usize][self.seq_step as usize];
-        if duty_value == 0 {
-            return 0;
-        }
-        self.envelope_volume()
     }
 
     fn target_period(&self) -> u16 {

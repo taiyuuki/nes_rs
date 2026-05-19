@@ -24,11 +24,7 @@ const NTSC_CPU_SCHEDULE: [u8; 1] = [3];
 const PAL_CPU_SCHEDULE: [u8; 5] = [3, 3, 3, 3, 4];
 const DENDY_CPU_SCHEDULE: [u8; 1] = [3];
 
-const PAL: [u8; 32] = [
-    0x0F, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x0D, 0x08, 0x10, 0x08, 0x24, 0x00, 0x00, 0x04, 0x2C,
-    0x0F, 0x01, 0x34, 0x03, 0x00, 0x04, 0x00, 0x14, 0x08, 0x3A, 0x00, 0x02, 0x00, 0x20, 0x2C, 0x08,
-];
-
+#[cfg(test)]
 const NES_RGB_PALETTE: [[u8; 3]; 64] = [
     [84, 84, 84],
     [0, 30, 116],
@@ -271,6 +267,7 @@ impl PPU {
         }
     }
 
+    #[cfg(test)]
     pub fn cpu_read_register(&mut self, bus: &mut impl PPUBus, addr: u16) -> u8 {
         self.cpu_read_register_timed(bus, addr, 0)
     }
@@ -293,6 +290,7 @@ impl PPU {
         }
     }
 
+    #[cfg(test)]
     pub fn cpu_write_register(&mut self, bus: &mut impl PPUBus, addr: u16, data: u8) {
         self.cpu_write_register_timed(bus, addr, data, 0);
     }
@@ -432,6 +430,7 @@ impl PPU {
         &self.bit_map[..VISIBLE_FRAME_PIXELS]
     }
 
+    #[cfg(test)]
     pub fn frame_rgb(&self) -> Vec<u8> {
         let mut rgb = Vec::with_capacity(VISIBLE_FRAME_PIXELS * 3);
         for &pixel in self.frame_pixels() {
@@ -452,6 +451,7 @@ impl PPU {
         self.write_oam_data(data);
     }
 
+    #[cfg(test)]
     pub fn oam_byte(&self, index: u8) -> u8 {
         self.oam[index as usize]
     }
@@ -791,10 +791,6 @@ impl PPU {
         data
     }
 
-    fn write_data(&mut self, bus: &mut impl PPUBus, data: u8) {
-        self.write_data_timed(bus, data, self.scanline);
-    }
-
     fn write_data_timed(&mut self, bus: &mut impl PPUBus, data: u8, effective_scanline: i16) {
         let addr = self.loopy_v & 0x3FFF;
         self.ppu_write_bus_exposed(bus, addr, data);
@@ -1069,7 +1065,8 @@ impl PPU {
         let pixel_index = y * 256 + x;
 
         let sprite_in_front = self.sprite_present[x] && !self.sprite_behind_bg[x];
-        let sprite_visible_behind_bg = self.sprite_present[x] && self.sprite_behind_bg[x] && bg_pixel == 0;
+        let sprite_visible_behind_bg =
+            self.sprite_present[x] && self.sprite_behind_bg[x] && bg_pixel == 0;
         if !sprite_in_front && !sprite_visible_behind_bg {
             self.bit_map[pixel_index] = color;
         }
@@ -1146,10 +1143,6 @@ impl PPU {
             && self.rendering_on()
             && self.odd_frame
             && self.cycles == DOTS_PER_SCANLINE - 2
-    }
-
-    fn rendering_vram_access_active(&self) -> bool {
-        self.rendering_vram_access_active_on_scanline(self.scanline)
     }
 
     fn rendering_vram_access_active_on_scanline(&self, scanline: i16) -> bool {
@@ -1409,6 +1402,7 @@ impl PPU {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn palette_index_to_rgb(index: u8) -> [u8; 3] {
     NES_RGB_PALETTE[(index & 0x3F) as usize]
 }
