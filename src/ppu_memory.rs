@@ -90,6 +90,12 @@ impl PPUMemory {
             .is_some_and(|cartridge| cartridge.irq_line())
     }
 
+    pub(super) fn cartridge_tick_cpu_cycle(&mut self) {
+        if let Some(cartridge) = &mut self.cartridge {
+            cartridge.tick_cpu_cycle();
+        }
+    }
+
     pub(super) fn save_state(&self, writer: &mut StateWriter) -> Result<(), SaveStateError> {
         writer.write_bytes(&self.chr_ram);
         writer.write_bytes(&self.vram);

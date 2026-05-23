@@ -2,8 +2,10 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 mod mappers;
+pub(crate) mod expansion_audio;
 
-use self::mappers::{Mapper, from_mapper_id};
+use self::mappers::{from_mapper_id, Mapper};
+use crate::apu::ExpansionAudioChip;
 use crate::savestate::{SaveStateError, StateReader, StateWriter};
 
 const INES_HEADER_LEN: usize = 16;
@@ -312,6 +314,7 @@ impl CartridgeHeader {
 #[allow(dead_code)]
 pub struct Cartridge {
     mapper: Box<dyn Mapper>,
+    expansion_chips: Vec<Box<dyn ExpansionAudioChip>>,
     header: CartridgeHeader,
 }
 
@@ -333,9 +336,14 @@ impl Cartridge {
 
         let prg_rom = rom[data_start..data_start + prg_len].to_vec();
         let chr_rom = rom[data_start + prg_len..data_end].to_vec();
-        let mapper = from_mapper_id(header.mapper_id, header.mirroring, prg_rom, chr_rom)?;
+        let (mapper, expansion_chips) =
+            from_mapper_id(header.mapper_id, header.mirroring, prg_rom, chr_rom)?;
 
-        Ok(Self { mapper, header })
+        Ok(Self {
+            mapper,
+            expansion_chips,
+            header,
+        })
     }
 
     pub fn mirroring(&self) -> Mirroring {
@@ -362,6 +370,10 @@ impl Cartridge {
         self.mapper.ppu_write(addr, data)
     }
 
+    pub fn take_expansion_audio_chips(&mut self) -> Vec<Box<dyn ExpansionAudioChip>> {
+        std::mem::take(&mut self.expansion_chips)
+    }
+
     pub fn check_a12(&mut self, addr: u16, ppu_cycle: u64) {
         self.mapper.check_a12(addr, ppu_cycle);
     }
@@ -372,6 +384,10 @@ impl Cartridge {
 
     pub fn irq_line(&self) -> bool {
         self.mapper.irq_line()
+    }
+
+    pub fn tick_cpu_cycle(&mut self) {
+        self.mapper.tick_cpu_cycle();
     }
 
     pub(crate) fn save_state(&self, writer: &mut StateWriter) {

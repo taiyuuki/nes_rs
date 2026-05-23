@@ -66,9 +66,13 @@ impl NESBus {
         }
     }
 
-    pub fn insert_cartridge(&mut self, cartridge: Cartridge) {
+    pub fn insert_cartridge(&mut self, mut cartridge: Cartridge) {
         self.ppu.set_parameters(cartridge.tv_system());
+        let chips = cartridge.take_expansion_audio_chips();
         self.ppu_memory.insert_cartridge(cartridge);
+        for chip in chips {
+            self.apu.add_expansion_chip(chip);
+        }
     }
 
     pub fn load_cartridge_ines(&mut self, rom: &[u8]) -> Result<(), CartridgeError> {
@@ -100,6 +104,7 @@ impl NESBus {
 
     pub fn tick_apu_cpu_cycle(&mut self) {
         self.apu.tick_cpu_cycle();
+        self.ppu_memory.cartridge_tick_cpu_cycle();
     }
 
     pub fn apu_sample_rate(&self) -> u32 {
