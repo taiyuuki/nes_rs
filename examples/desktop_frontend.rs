@@ -1,6 +1,6 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
-use nes_core::video::{VideoBuffer, frame_to_argb32, frame_to_argb32_into};
+use nes_core::video::{VideoBuffer, frame_to_argb32_into};
 use nes_core::{
     ControllerButton, ControllerState, FrontendInput, FrontendRuntime, RunMode, TVSystem,
 };
@@ -225,9 +225,11 @@ fn main() -> ExitCode {
 
         // 使用预分配的缓冲区转换帧数据
         frame_to_argb32_into(snapshot.video, video_buffer.as_mut_slice());
-        if let Err(error) =
-            window.update_with_buffer(video_buffer.as_slice(), snapshot.video.width, snapshot.video.height)
-        {
+        if let Err(error) = window.update_with_buffer(
+            video_buffer.as_slice(),
+            snapshot.video.width,
+            snapshot.video.height,
+        ) {
             eprintln!("failed to present frame: {error}");
             return ExitCode::from(1);
         }
