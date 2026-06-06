@@ -1,6 +1,6 @@
 use crate::apu::APU;
 use crate::cartridge::{Cartridge, CartridgeError};
-use crate::dma::{DmaBus, DmaController};
+use crate::dma::{DmaBusRequest, DmaController};
 use crate::input::{ControllerState, Joypad};
 use crate::ppu::PPU;
 use crate::ppu_memory::PPUMemory;
@@ -247,9 +247,24 @@ impl NESBus {
     }
 
     fn tick_dma_cpu_cycle(&mut self) -> bool {
-        let mut dma = std::mem::take(&mut self.dma);
-        let consumed = dma.tick_cpu_cycle(self);
-        self.dma = dma;
+        let dmc_request = self.apu.take_dmc_dma_request();
+        let (consumed, request) = self.dma.tick_cpu_cycle(dmc_request);
+        match request {
+            DmaBusRequest::None => {}
+            DmaBusRequest::DmcRead { addr } => {
+                let data = self.cpu_read_internal(addr, 0);
+                self.apu.submit_dmc_dma_sample(data);
+                self.dma.apply_dmc_read();
+            }
+            DmaBusRequest::OamRead { addr } => {
+                let data = self.cpu_read_internal(addr, 0);
+                self.dma.apply_oam_read(data);
+            }
+            DmaBusRequest::OamWrite { data } => {
+                self.ppu.write_oam_dma(data);
+                self.dma.apply_oam_write();
+            }
+        }
         consumed
     }
 }
@@ -273,24 +288,6 @@ impl CPUBus for NESBus {
 
     fn try_dma(&mut self) -> bool {
         self.tick_dma_cpu_cycle()
-    }
-}
-
-impl DmaBus for NESBus {
-    fn dma_read(&mut self, addr: u16) -> u8 {
-        self.cpu_read_internal(addr, 0)
-    }
-
-    fn dma_write_oam(&mut self, data: u8) {
-        self.ppu.write_oam_dma(data);
-    }
-
-    fn take_dmc_dma_request(&mut self) -> Option<crate::apu::dmc::DmcDmaRequest> {
-        self.apu.take_dmc_dma_request()
-    }
-
-    fn submit_dmc_dma_sample(&mut self, data: u8) {
-        self.apu.submit_dmc_dma_sample(data);
     }
 }
 

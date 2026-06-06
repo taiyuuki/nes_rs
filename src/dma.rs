@@ -1,11 +1,16 @@
 use crate::apu::dmc::{DmcDmaKind, DmcDmaRequest};
 use crate::savestate::{SaveStateError, StateReader, StateWriter};
 
-pub trait DmaBus {
-    fn dma_read(&mut self, addr: u16) -> u8;
-    fn dma_write_oam(&mut self, data: u8);
-    fn take_dmc_dma_request(&mut self) -> Option<DmcDmaRequest>;
-    fn submit_dmc_dma_sample(&mut self, data: u8);
+/// DMA控制器在一个CPU周期内需要总线执行的操作
+pub enum DmaBusRequest {
+    /// 无需总线操作
+    None,
+    /// DMC DMA读取：从addr读取一字节，作为DMC采样提交
+    DmcRead { addr: u16 },
+    /// OAM DMA读取：从addr读取一字节
+    OamRead { addr: u16 },
+    /// OAM DMA写入：将data写入OAM
+    OamWrite { data: u8 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -107,9 +112,12 @@ impl DmaController {
         self.pending_oam.is_some() || self.active_oam.is_some() || self.active_dmc.is_some()
     }
 
-    pub fn tick_cpu_cycle(&mut self, bus: &mut impl DmaBus) -> bool {
+    pub fn tick_cpu_cycle(
+        &mut self,
+        dmc_request: Option<DmcDmaRequest>,
+    ) -> (bool, DmaBusRequest) {
         if self.active_dmc.is_none() {
-            if let Some(request) = bus.take_dmc_dma_request() {
+            if let Some(request) = dmc_request {
                 self.active_dmc = Some(DmcDma::new(request));
             }
         }
@@ -132,12 +140,10 @@ impl DmaController {
                     dma.state = DmcDmaState::Read;
                 }
                 DmcDmaState::Read => {
-                    let data = bus.dma_read(dma.addr);
-                    bus.submit_dmc_dma_sample(data);
-                    self.active_dmc = None;
+                    return (true, DmaBusRequest::DmcRead { addr: dma.addr });
                 }
             }
-            return true;
+            return (true, DmaBusRequest::None);
         }
 
         if self.active_oam.is_none() {
@@ -161,21 +167,38 @@ impl DmaController {
                     dma.state = OamDmaState::Read;
                 }
                 OamDmaState::Read => {
-                    dma.latch = bus.dma_read(dma.source_addr());
-                    dma.state = OamDmaState::Write;
+                    return (true, DmaBusRequest::OamRead {
+                        addr: dma.source_addr(),
+                    });
                 }
                 OamDmaState::Write => {
-                    bus.dma_write_oam(dma.latch);
-                    dma.index = dma.index.wrapping_add(1);
-                    if dma.index == 0 {
-                        self.active_oam = None;
-                    } else {
-                        dma.state = OamDmaState::Read;
-                    }
+                    return (true, DmaBusRequest::OamWrite { data: dma.latch });
                 }
             }
         }
-        consumed
+        (consumed, DmaBusRequest::None)
+    }
+
+    pub fn apply_dmc_read(&mut self) {
+        self.active_dmc = None;
+    }
+
+    pub fn apply_oam_read(&mut self, data: u8) {
+        if let Some(dma) = self.active_oam.as_mut() {
+            dma.latch = data;
+            dma.state = OamDmaState::Write;
+        }
+    }
+
+    pub fn apply_oam_write(&mut self) {
+        if let Some(dma) = self.active_oam.as_mut() {
+            dma.index = dma.index.wrapping_add(1);
+            if dma.index == 0 {
+                self.active_oam = None;
+            } else {
+                dma.state = OamDmaState::Read;
+            }
+        }
     }
 
     pub fn advance_cpu_phase(&mut self) {
