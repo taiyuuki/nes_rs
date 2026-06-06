@@ -11,9 +11,9 @@ use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-const AUDIO_TARGET_BUFFER_MS: usize = 60;
-const AUDIO_MAX_BUFFER_MS: usize = 200;
-const AUDIO_CATCHUP_MAX_FRAMES: usize = 1;
+const AUDIO_TARGET_BUFFER_MS: usize = 15;
+const AUDIO_MAX_BUFFER_MS: usize = 100;
+const AUDIO_CATCHUP_MAX_FRAMES: usize = 2;
 
 /// Windows 高精度定时器守卫，离开作用域时自动恢复
 #[cfg(target_os = "windows")]
@@ -476,17 +476,16 @@ impl AudioPlayer {
             return;
         }
 
-        let mono_samples = if source_sample_rate == self.output_sample_rate {
-            samples.to_vec()
-        } else if let Ok(mut resampler) = self.resampler.lock() {
-            resampler.resample_chunk(samples, source_sample_rate)
-        } else {
-            return;
-        };
-
         if let Ok(mut output_state) = self.output_state.lock() {
-            for sample in mono_samples {
-                output_state.queue.push_back(sample.clamp(-1.0, 1.0));
+            if source_sample_rate == self.output_sample_rate {
+                for &sample in samples {
+                    output_state.queue.push_back(sample.clamp(-1.0, 1.0));
+                }
+            } else if let Ok(mut resampler) = self.resampler.lock() {
+                let resampled = resampler.resample_chunk(samples, source_sample_rate);
+                for sample in resampled {
+                    output_state.queue.push_back(sample.clamp(-1.0, 1.0));
+                }
             }
 
             while output_state.queue.len() > self.max_queue_samples {
