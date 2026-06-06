@@ -1,3 +1,4 @@
+use crate::cartridge::TVSystem;
 use crate::savestate::{SaveStateError, StateReader, StateWriter};
 
 pub(crate) mod dmc;
@@ -94,6 +95,10 @@ impl APU {
 
     pub fn add_expansion_chip(&mut self, chip: Box<dyn ExpansionAudioChip>) {
         self.expansions.push(chip);
+    }
+
+    pub fn set_tv_system(&mut self, tv: TVSystem) {
+        self.dmc.set_tv_system(tv);
     }
 
     pub fn reset(&mut self) {

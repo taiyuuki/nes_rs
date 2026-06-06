@@ -112,10 +112,7 @@ impl DmaController {
         self.pending_oam.is_some() || self.active_oam.is_some() || self.active_dmc.is_some()
     }
 
-    pub fn tick_cpu_cycle(
-        &mut self,
-        dmc_request: Option<DmcDmaRequest>,
-    ) -> (bool, DmaBusRequest) {
+    pub fn tick_cpu_cycle(&mut self, dmc_request: Option<DmcDmaRequest>) -> (bool, DmaBusRequest) {
         if self.active_dmc.is_none() {
             if let Some(request) = dmc_request {
                 self.active_dmc = Some(DmcDma::new(request));
@@ -167,9 +164,12 @@ impl DmaController {
                     dma.state = OamDmaState::Read;
                 }
                 OamDmaState::Read => {
-                    return (true, DmaBusRequest::OamRead {
-                        addr: dma.source_addr(),
-                    });
+                    return (
+                        true,
+                        DmaBusRequest::OamRead {
+                            addr: dma.source_addr(),
+                        },
+                    );
                 }
                 OamDmaState::Write => {
                     return (true, DmaBusRequest::OamWrite { data: dma.latch });

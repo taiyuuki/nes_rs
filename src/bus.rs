@@ -67,7 +67,9 @@ impl NESBus {
     }
 
     pub fn insert_cartridge(&mut self, mut cartridge: Cartridge) {
-        self.ppu.set_parameters(cartridge.tv_system());
+        let tv_system = cartridge.tv_system();
+        self.ppu.set_parameters(tv_system);
+        self.apu.set_tv_system(tv_system);
         let chips = cartridge.take_expansion_audio_chips();
         self.ppu_memory.insert_cartridge(cartridge);
         for chip in chips {

@@ -1,3 +1,13 @@
+use crate::cartridge::TVSystem;
+
+const DMC_PERIODS_NTSC: [u16; 16] = [
+    428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54,
+];
+
+const DMC_PERIODS_PAL: [u16; 16] = [
+    398, 354, 316, 298, 276, 236, 210, 198, 176, 148, 132, 118, 98, 78, 66, 50,
+];
+
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub enum DmcDmaKind {
@@ -29,6 +39,7 @@ pub struct DmcState {
     pub(super) rate_index: u8,
     pub(super) timer_reload: u16,
     pub(super) timer_counter: u16,
+    pub(crate) dmc_periods: &'static [u16; 16],
 }
 
 impl Default for DmcState {
@@ -50,19 +61,25 @@ impl Default for DmcState {
             rate_index: 0,
             timer_reload: 0,
             timer_counter: 0,
+            dmc_periods: &DMC_PERIODS_NTSC,
         }
     }
 }
 
 impl DmcState {
+    pub(super) fn set_tv_system(&mut self, tv: TVSystem) {
+        self.dmc_periods = match tv {
+            TVSystem::NTSC | TVSystem::DENDY => &DMC_PERIODS_NTSC,
+            TVSystem::PAL => &DMC_PERIODS_PAL,
+        };
+        self.timer_reload = self.dmc_periods[self.rate_index as usize];
+    }
+
     pub(super) fn write_control(&mut self, value: u8) {
-        const DMC_PERIODS_NTSC: [u16; 16] = [
-            428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54,
-        ];
         self.irq_enabled = (value & 0x80) != 0;
         self.loop_flag = (value & 0x40) != 0;
         self.rate_index = value & 0x0F;
-        self.timer_reload = DMC_PERIODS_NTSC[self.rate_index as usize];
+        self.timer_reload = self.dmc_periods[self.rate_index as usize];
         if !self.irq_enabled {
             self.irq_flag = false;
         }
