@@ -11,9 +11,9 @@ use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-const AUDIO_TARGET_BUFFER_MS: usize = 15;
-const AUDIO_MAX_BUFFER_MS: usize = 100;
-const AUDIO_CATCHUP_MAX_FRAMES: usize = 2;
+const AUDIO_TARGET_BUFFER_MS: usize = 50;
+const AUDIO_MAX_BUFFER_MS: usize = 200;
+const AUDIO_CATCHUP_MAX_FRAMES: usize = 5;
 
 /// Windows 高精度定时器守卫，离开作用域时自动恢复
 #[cfg(target_os = "windows")]
@@ -141,13 +141,23 @@ fn main() -> ExitCode {
             "Audio: {}Hz, target buffer {}ms ({} samples), max {}ms ({} samples), catch-up {} frames",
             player.output_sample_rate(),
             AUDIO_TARGET_BUFFER_MS,
-            player.target_queue_samples,
+            player.target_queue_len(),
             AUDIO_MAX_BUFFER_MS,
             player.max_queue_samples,
             AUDIO_CATCHUP_MAX_FRAMES,
         );
 
-        // 立即启动音频播放
+        // 预填充音频缓冲区
+        let input = FrontendInput {
+            controller1: ControllerState::new(),
+            ..Default::default()
+        };
+        while player.queue_len() < player.target_queue_len() {
+            let snapshot = runtime.step(input);
+            player.push_samples(snapshot.audio.samples, snapshot.audio.sample_rate);
+        }
+
+        // 现在启动音频播放
         player.start_playback();
         eprintln!(
             "Audio playback started, queue: {} samples",
@@ -381,6 +391,7 @@ struct AudioOutputState {
     last_sample: f32,
     underrun_count: u64,
     underrun_samples: u64,
+    underrun_last_report: Instant,
 }
 
 impl AudioPlayer {
@@ -402,6 +413,7 @@ impl AudioPlayer {
             last_sample: 0.0,
             underrun_count: 0,
             underrun_samples: 0,
+            underrun_last_report: Instant::now(),
         }));
         let output_state_for_stream = Arc::clone(&output_state);
         let error_callback = |error| eprintln!("audio stream error: {error}");
@@ -458,6 +470,10 @@ impl AudioPlayer {
         self.output_sample_rate
     }
 
+    fn target_queue_len(&self) -> usize {
+        self.target_queue_samples
+    }
+
     fn start_playback(&mut self) {
         if !self.playback_started {
             if let Err(e) = self.stream.play() {
@@ -476,15 +492,32 @@ impl AudioPlayer {
             return;
         }
 
+        // 静音阈值：低于此值的样本被截断为 0，避免浮点噪声
+        const SILENCE_THRESHOLD: f32 = 1e-5;
+
         if let Ok(mut output_state) = self.output_state.lock() {
             if source_sample_rate == self.output_sample_rate {
                 for &sample in samples {
-                    output_state.queue.push_back(sample.clamp(-1.0, 1.0));
+                    let sample = sample.clamp(-1.0, 1.0);
+                    output_state
+                        .queue
+                        .push_back(if sample.abs() < SILENCE_THRESHOLD {
+                            0.0
+                        } else {
+                            sample
+                        });
                 }
             } else if let Ok(mut resampler) = self.resampler.lock() {
                 let resampled = resampler.resample_chunk(samples, source_sample_rate);
                 for sample in resampled {
-                    output_state.queue.push_back(sample.clamp(-1.0, 1.0));
+                    let sample = sample.clamp(-1.0, 1.0);
+                    output_state
+                        .queue
+                        .push_back(if sample.abs() < SILENCE_THRESHOLD {
+                            0.0
+                        } else {
+                            sample
+                        });
                 }
             }
 
@@ -596,8 +629,9 @@ fn write_audio_data(
     channels: usize,
     output_state: &Arc<Mutex<AudioOutputState>>,
 ) {
-    const UNDERRUN_DECAY: f32 = 0.98;
-    const SILENCE_EPSILON: f32 = 1e-4;
+    // 更快的衰减，更快到达静音
+    const UNDERRUN_DECAY: f32 = 0.85;
+    const SILENCE_EPSILON: f32 = 1e-5;
     let mut next_sample = 0.0;
     if let Ok(mut output_state) = output_state.lock() {
         for frame in output.chunks_mut(channels) {
@@ -617,6 +651,21 @@ fn write_audio_data(
             for sample in frame {
                 *sample = next_sample;
             }
+        }
+
+        // 每秒打印一次 underrun 统计
+        if output_state.underrun_count > 0
+            && output_state.underrun_last_report.elapsed() >= Duration::from_secs(1)
+        {
+            eprintln!(
+                "AUDIO UNDERRUN: {} callbacks, {} samples dropped, queue: {} samples",
+                output_state.underrun_count,
+                output_state.underrun_samples,
+                output_state.queue.len()
+            );
+            output_state.underrun_count = 0;
+            output_state.underrun_samples = 0;
+            output_state.underrun_last_report = Instant::now();
         }
     } else {
         for sample in output.iter_mut() {
