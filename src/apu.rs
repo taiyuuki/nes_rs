@@ -11,9 +11,14 @@ use noise::NoiseChannel;
 use pulse::PulseChannel;
 use triangle::TriangleChannel;
 
-const CPU_CLOCK_NTSC: f64 = 1_789_773.0;
+const CPU_CLOCK_NTSC: u64 = 1_789_773;
 const DEFAULT_SAMPLE_RATE: u32 = 44_100;
 const FRAME_SEQUENCER_DIVIDER: u16 = 7_456;
+
+// 使用 Q31.31 定点数格式进行相位跟踪
+// 高 32 位是整数部分，低 32 位是小数部分
+const PHASE_SCALE: u64 = 1u64 << 32;
+
 pub const LENGTH_TABLE: [u8; 32] = [
     10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14, 12, 16, 24, 18, 48, 20, 96, 22,
     192, 24, 72, 26, 16, 28, 32, 30,
@@ -49,8 +54,9 @@ pub struct APU {
     frame_divider: u16,
     pending_dmc_dma: Option<DmcDmaRequest>,
     sample_rate: u32,
-    cycles_per_sample: f64,
-    sample_phase: f64,
+    // 使用 Q31.31 定点数：每个 CPU 周期增加 PHASE_SCALE / cycles_per_sample
+    cycles_per_sample_fixed: u64,
+    sample_phase_fixed: u64,
     // 整数累加器，避免每 CPU 周期的浮点运算
     sample_accum_pulse: i64,
     sample_accum_tri: i64,
@@ -67,6 +73,9 @@ pub struct APU {
 impl APU {
     pub fn new() -> Self {
         let sample_rate = DEFAULT_SAMPLE_RATE;
+        // 使用定点数：cycles_per_sample_fixed = (PHASE_SCALE * sample_rate) / cpu_clock
+        // 这样 sample_phase_fixed 每次增加 cycles_per_sample_fixed
+        let cycles_per_sample_fixed = (PHASE_SCALE * sample_rate as u64) / CPU_CLOCK_NTSC;
         Self {
             pulse1: PulseChannel::new(true),
             pulse2: PulseChannel::new(false),
@@ -80,8 +89,8 @@ impl APU {
             frame_divider: FRAME_SEQUENCER_DIVIDER,
             pending_dmc_dma: None,
             sample_rate,
-            cycles_per_sample: CPU_CLOCK_NTSC / sample_rate as f64,
-            sample_phase: 0.0,
+            cycles_per_sample_fixed,
+            sample_phase_fixed: 0,
             sample_accum_pulse: 0,
             sample_accum_tri: 0,
             sample_accum_noise: 0,
@@ -108,7 +117,7 @@ impl APU {
         self.frame_step = 0;
         self.frame_divider = FRAME_SEQUENCER_DIVIDER;
         self.pending_dmc_dma = None;
-        self.sample_phase = 0.0;
+        self.sample_phase_fixed = 0;
         self.sample_accum_pulse = 0;
         self.sample_accum_tri = 0;
         self.sample_accum_noise = 0;
@@ -193,18 +202,20 @@ impl APU {
 
         self.sample_accum_count = self.sample_accum_count.saturating_add(1);
 
-        self.sample_phase += 1.0;
-        if self.sample_phase >= self.cycles_per_sample {
-            self.sample_phase -= self.cycles_per_sample;
-            let count = self.sample_accum_count.max(1) as f64;
-            let inv_count = 1.0 / count;
+        self.sample_phase_fixed += self.cycles_per_sample_fixed;
+        if self.sample_phase_fixed >= PHASE_SCALE {
+            self.sample_phase_fixed -= PHASE_SCALE;
+            let count = self.sample_accum_count.max(1);
             // 只在输出时转换为浮点，使用乘法代替除法
+            let count_f64 = count as f64;
+            let inv_count = 1.0 / count_f64;
             let avg_pulse = self.sample_accum_pulse as f64 * inv_count;
             let avg_tri = self.sample_accum_tri as f64 * inv_count;
             let avg_noise = self.sample_accum_noise as f64 * inv_count;
             let avg_dmc = self.sample_accum_dmc as f64 * inv_count;
-            let avg_exp = self.sample_accum_exp as f64 * inv_count * (1.0 / 1000.0);
+            let avg_exp = self.sample_accum_exp as f64 * inv_count / 1000.0;
 
+            // 使用原始浮点混合公式
             let pulse_mix = if avg_pulse > 0.0 {
                 (95.88 / ((8128.0 / avg_pulse) + 100.0)) as f32
             } else {
@@ -300,8 +311,8 @@ impl APU {
         }
 
         self.sample_rate = sample_rate;
-        self.cycles_per_sample = CPU_CLOCK_NTSC / sample_rate as f64;
-        self.sample_phase = 0.0;
+        self.cycles_per_sample_fixed = (PHASE_SCALE * sample_rate as u64) / CPU_CLOCK_NTSC;
+        self.sample_phase_fixed = 0;
         self.sample_accum_pulse = 0;
         self.sample_accum_tri = 0;
         self.sample_accum_noise = 0;
