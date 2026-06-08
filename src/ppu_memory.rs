@@ -92,6 +92,25 @@ impl PPUMemory {
         }
     }
 
+    #[allow(dead_code)]
+    pub(super) fn notify_scanline(&mut self, scanline: i16, rendering_on: bool) {
+        if let Some(cartridge) = &mut self.cartridge {
+            cartridge.notify_scanline(scanline, rendering_on);
+        }
+    }
+
+    pub(super) fn ppu_read_nametable(&mut self, addr: u16) -> Option<u8> {
+        self.cartridge
+            .as_mut()
+            .and_then(|c| c.ppu_read_nametable(addr))
+    }
+
+    pub(super) fn ppu_write_nametable(&mut self, addr: u16, data: u8) -> bool {
+        self.cartridge
+            .as_mut()
+            .is_some_and(|c| c.ppu_write_nametable(addr, data))
+    }
+
     pub(super) fn save_state(&self, writer: &mut StateWriter) -> Result<(), SaveStateError> {
         writer.write_bytes(&self.chr_ram);
         writer.write_bytes(&self.vram);
@@ -139,7 +158,13 @@ impl PPUBus for PPUMemory {
                 .as_mut()
                 .and_then(|c| c.ppu_read(addr))
                 .unwrap_or_else(|| self.chr_ram[addr as usize]),
-            0x2000..=0x3EFF => self.vram[self.nametable_index(addr)],
+            0x2000..=0x3EFF => {
+                if let Some(data) = self.ppu_read_nametable(addr) {
+                    data
+                } else {
+                    self.vram[self.nametable_index(addr)]
+                }
+            }
             0x3F00..=0x3FFF => self.palette[Self::palette_index(addr)],
             _ => 0,
         }
@@ -157,7 +182,11 @@ impl PPUBus for PPUMemory {
                     self.chr_ram[addr as usize] = data;
                 }
             }
-            0x2000..=0x3EFF => self.vram[self.nametable_index(addr)] = data,
+            0x2000..=0x3EFF => {
+                if !self.ppu_write_nametable(addr, data) {
+                    self.vram[self.nametable_index(addr)] = data;
+                }
+            }
             0x3F00..=0x3FFF => self.palette[Self::palette_index(addr)] = data,
             _ => {}
         }
@@ -166,6 +195,18 @@ impl PPUBus for PPUMemory {
     fn check_a12(&mut self, addr: u16, ppu_cycle: u64) {
         if let Some(cartridge) = &mut self.cartridge {
             cartridge.check_a12(addr, ppu_cycle);
+        }
+    }
+
+    fn notify_scanline(&mut self, scanline: i16, rendering_on: bool) {
+        if let Some(cartridge) = &mut self.cartridge {
+            cartridge.notify_scanline(scanline, rendering_on);
+        }
+    }
+
+    fn set_ppu_sprite_phase(&mut self, sprite_phase: bool) {
+        if let Some(cartridge) = &mut self.cartridge {
+            cartridge.set_ppu_sprite_phase(sprite_phase);
         }
     }
 }

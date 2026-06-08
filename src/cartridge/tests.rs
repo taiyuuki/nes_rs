@@ -107,14 +107,15 @@ fn allocates_chr_ram_when_chr_banks_are_zero() {
 
 #[test]
 fn rejects_unsupported_mapper() {
-    let rom = make_ines(1, 1, 0x50, 0x00, 0x00);
+    // Mapper 14 is not implemented (flags6 >> 4 = 14, with SRAM flag set)
+    let rom = make_ines(1, 1, 0xE2, 0x00, 0x00);
 
     let err = match Cartridge::from_ines(&rom) {
-        Ok(_) => panic!("mapper 5 should be rejected"),
+        Ok(_) => panic!("mapper 14 should be rejected"),
         Err(err) => err,
     };
 
-    assert_eq!(err, CartridgeError::UnsupportedMapper(5));
+    assert_eq!(err, CartridgeError::UnsupportedMapper(14));
 }
 
 #[test]

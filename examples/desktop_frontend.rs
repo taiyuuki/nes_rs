@@ -304,16 +304,16 @@ fn main() -> ExitCode {
             frames_in_window = 0;
             fps_window_start = Instant::now();
 
-            if let Some(player) = &audio_player {
-                if let Some((count, samples)) = player.underrun_stats() {
-                    if count > 0 {
-                        eprintln!(
-                            "AUDIO UNDERRUN: {} callbacks, {} samples dropped ({} fps)",
-                            count, samples, fps
-                        );
-                    }
-                }
-            }
+            // if let Some(player) = &audio_player {
+            //     if let Some((count, samples)) = player.underrun_stats() {
+            //         if count > 0 {
+            //             eprintln!(
+            //                 "AUDIO UNDERRUN: {} callbacks, {} samples dropped ({} fps)",
+            //                 count, samples, fps
+            //             );
+            //         }
+            //     }
+            // }
             // if frame_count_acc > 0 {
             //     let n = frame_count_acc as f32;
             //     let queue_info = audio_player

@@ -27,6 +27,7 @@ mod mapper94;
 
 mod mmc1;
 mod mmc3;
+mod mmc5;
 mod namco163;
 mod namco3433;
 mod nina003;
@@ -69,6 +70,7 @@ use self::mapper152::Mapper152;
 use self::mapper162::Mapper162;
 use self::mmc1::Mmc1;
 use self::mmc3::Mmc3;
+use self::mmc5::new_mmc5;
 use self::namco163::new_namco163;
 use self::namco3433::Namco3433;
 use self::nina003::Nina003;
@@ -100,6 +102,14 @@ pub(super) trait Mapper {
         false
     }
     fn tick_cpu_cycle(&mut self) {}
+    fn notify_scanline(&mut self, _scanline: i16, _rendering_on: bool) {}
+    fn set_ppu_sprite_phase(&mut self, _sprite_phase: bool) {}
+    fn ppu_read_nametable(&mut self, _addr: u16) -> Option<u8> {
+        None
+    }
+    fn ppu_write_nametable(&mut self, _addr: u16, _data: u8) -> bool {
+        false
+    }
     fn save_state(&self, writer: &mut StateWriter);
     fn load_state(&mut self, reader: &mut StateReader<'_>) -> Result<(), SaveStateError>;
 }
@@ -139,6 +149,7 @@ pub(super) fn from_mapper_id(
         2 => Ok((Box::new(Uxrom::new(prg_rom, chr_rom, mirroring)), vec![])),
         3 => Ok((Box::new(Cnrom::new(prg_rom, chr_rom, mirroring)), vec![])),
         4 => Ok((Box::new(Mmc3::new(prg_rom, chr_rom, mirroring)), vec![])),
+        5 => Ok(new_mmc5(prg_rom, chr_rom, mirroring)),
         7 => Ok((Box::new(Anrom::new(prg_rom, chr_rom, mirroring)), vec![])),
         11 => Ok((
             Box::new(ColorDreams::new(prg_rom, chr_rom, mirroring)),

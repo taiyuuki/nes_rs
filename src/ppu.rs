@@ -93,6 +93,8 @@ pub trait PPUBus {
     fn ppu_read(&mut self, addr: u16) -> u8;
     fn ppu_write(&mut self, addr: u16, data: u8);
     fn check_a12(&mut self, _addr: u16, _ppu_cycle: u64) {}
+    fn notify_scanline(&mut self, _scanline: i16, _rendering_on: bool) {}
+    fn set_ppu_sprite_phase(&mut self, _sprite_phase: bool) {}
 }
 
 #[derive(Clone, Copy)]
@@ -342,6 +344,7 @@ impl PPU {
             if self.cycles >= DOTS_PER_SCANLINE {
                 self.cycles = 0;
                 self.scanline += 1;
+                bus.notify_scanline(self.scanline, false);
             }
             self.dot_clock = self.dot_clock.wrapping_add(1);
             return;
@@ -376,6 +379,7 @@ impl PPU {
 
             if self.bg_on() && fetch_cycle {
                 self.update_bg_shifters();
+                bus.set_ppu_sprite_phase(false);
                 self.fetch_bg(bus);
             }
 
@@ -393,6 +397,7 @@ impl PPU {
             }
 
             if (257..321).contains(&self.cycles) {
+                bus.set_ppu_sprite_phase(true);
                 self.fetch_sprite_data(bus);
             }
         }
@@ -407,6 +412,7 @@ impl PPU {
         if self.cycles >= DOTS_PER_SCANLINE {
             self.cycles = 0;
             self.scanline += 1;
+            bus.notify_scanline(self.scanline, self.rendering_on());
 
             if self.scanline >= self.num_scanlines {
                 self.start_next_frame();

@@ -390,6 +390,22 @@ impl Cartridge {
         self.mapper.tick_cpu_cycle();
     }
 
+    pub fn notify_scanline(&mut self, scanline: i16, rendering_on: bool) {
+        self.mapper.notify_scanline(scanline, rendering_on);
+    }
+
+    pub fn set_ppu_sprite_phase(&mut self, sprite_phase: bool) {
+        self.mapper.set_ppu_sprite_phase(sprite_phase);
+    }
+
+    pub fn ppu_read_nametable(&mut self, addr: u16) -> Option<u8> {
+        self.mapper.ppu_read_nametable(addr)
+    }
+
+    pub fn ppu_write_nametable(&mut self, addr: u16, data: u8) -> bool {
+        self.mapper.ppu_write_nametable(addr, data)
+    }
+
     pub(crate) fn save_state(&self, writer: &mut StateWriter) {
         writer.write_u16(self.header.mapper_id);
         self.mapper.save_state(writer);

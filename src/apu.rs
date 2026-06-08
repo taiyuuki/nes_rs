@@ -26,6 +26,8 @@ pub trait ExpansionAudioChip {
         None
     }
     fn tick_cpu_cycle(&mut self) {}
+    fn clock_quarter_frame(&mut self) {}
+    fn clock_half_frame(&mut self) {}
     fn irq_line(&self) -> bool {
         false
     }
@@ -461,6 +463,9 @@ impl APU {
         self.pulse2.quarter_frame_tick();
         self.triangle.quarter_frame_tick();
         self.noise.quarter_frame_tick();
+        for chip in &mut self.expansions {
+            chip.clock_quarter_frame();
+        }
     }
 
     fn clock_half_frame(&mut self) {
@@ -468,6 +473,9 @@ impl APU {
         self.pulse2.half_frame_tick();
         self.triangle.half_frame_tick();
         self.noise.half_frame_tick();
+        for chip in &mut self.expansions {
+            chip.clock_half_frame();
+        }
     }
 }
 
