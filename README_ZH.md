@@ -36,27 +36,43 @@ let frame = nes.clock();
 let audio = nes.audio_samples();
 ```
 
+## 项目结构
+
+```
+nes-sim/            核心库（零依赖）
+nes-desktop/        桌面前端（minifb + cpal）
+```
+
 ## 构建
 
 ```bash
-# 核心库（无外部依赖）
-cargo build
+# 构建核心库
+cargo build -p nes-sim
+
+# 构建桌面前端
+cargo build -p nes-desktop
 
 # 运行测试
-cargo test
+cargo test -p nes-sim
 ```
 
 ## 示例
 
 | 示例 | 说明 |
 |---|---|
-| `desktop_frontend` | 完整桌面 GUI，支持音频同步、键盘输入、暂停/单步 |
 | `export_frame` | 导出单帧为 PPM 图片 |
+| `analyze_audio` | 导出音频为 WAV |
+| `analyze_state` | 分析指定帧的模拟器状态 |
+| `hash_frame` | 哈希帧像素用于回归测试 |
 
 ```bash
-cargo run --example export_frame -- "game.nes" "output.ppm" 180
+cargo run -p nes-sim --example export_frame -- "game.nes" "output.ppm" 180
+```
 
-cargo run --example desktop_frontend -- "game.nes""
+## 桌面前端
+
+```bash
+cargo run --release -p nes-desktop -- "game.nes"
 ```
 
 ## 支持的 Mapper

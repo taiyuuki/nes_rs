@@ -36,27 +36,43 @@ let frame = nes.clock();
 let audio = nes.audio_samples();
 ```
 
+## Project Structure
+
+```
+nes-sim/            Core library (zero dependencies)
+nes-desktop/        Desktop frontend (minifb + cpal)
+```
+
 ## Building
 
 ```bash
-# Core library (no external dependencies)
-cargo build
+# Build core library
+cargo build -p nes-sim
+
+# Build desktop frontend
+cargo build -p nes-desktop
 
 # Run tests
-cargo test
+cargo test -p nes-sim
 ```
 
 ## Examples
 
 | Example | Description |
 |---|---|
-| `desktop_frontend` | Full desktop GUI with audio sync, keyboard input, pause/step |
 | `export_frame` | Export a single frame as PPM image |
+| `analyze_audio` | Export audio as WAV |
+| `analyze_state` | Analyze emulator state at a specific frame |
+| `hash_frame` | Hash frame pixels for regression testing |
 
 ```bash
-cargo run --example export_frame -- "game.nes" "output.ppm" 180
+cargo run -p nes-sim --example export_frame -- "game.nes" "output.ppm" 180
+```
 
-cargo run --example desktop_frontend -- "game.nes""
+## Desktop Frontend
+
+```bash
+cargo run --release -p nes-desktop -- "game.nes"
 ```
 
 ## Supported Mappers
