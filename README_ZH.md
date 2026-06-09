@@ -8,7 +8,7 @@
 - **PPU 渲染** — 256x240 分辨率，精灵与背景渲染
 - **APU 音频** — 5 个标准声道（Pulse x2、Triangle、Noise、DMC）
 - **扩展音频** — VRC6、Namco 163、Sunsoft 5B、MMC5
-- **45 种 Mapper** — 覆盖 MMC1/MMC3/VRC 系列/Namco/Taito/Sunsoft 等常见 Mapper
+- **Mapper** — 覆盖 MMC1/MMC3/VRC 系列/Namco/Taito/Sunsoft 等常见 Mapper
 - **多制式支持** — NTSC、PAL、DENDY
 - **存档功能** — 自定义二进制格式，支持 Mapper 校验
 - **调试支持** — CPU/PPU 状态快照、声道独立静音

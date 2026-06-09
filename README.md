@@ -8,7 +8,7 @@ A NES (Famicom) emulator core library written in Rust. Headless design decouples
 - **PPU rendering** — 256x240 resolution with sprite and background rendering
 - **APU audio** — 5 standard channels (Pulse x2, Triangle, Noise, DMC)
 - **Expansion audio** — VRC6, Namco 163, Sunsoft 5B, MMC5
-- **45 Mappers** — Coverage of MMC1/MMC3/VRC series/Namco/Taito/Sunsoft and other common mappers
+- **Mappers** — Coverage of MMC1/MMC3/VRC series/Namco/Taito/Sunsoft and other common mappers
 - **Multi-system support** — NTSC, PAL, DENDY
 - **Save states** — Custom binary format with mapper validation
 - **Debug support** — CPU/PPU state snapshots, per-channel mute
