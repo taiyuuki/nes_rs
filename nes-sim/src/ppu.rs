@@ -679,6 +679,7 @@ impl PPU {
         self.even = reader.read_bool()?;
         self.dot_clock = reader.read_u64()?;
         self.update_rendering_flags();
+        self.palette_cache_dirty = true;
         Ok(())
     }
 
