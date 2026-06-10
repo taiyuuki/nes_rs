@@ -46,3 +46,16 @@ export interface BreakpointDef {
   type: "address" | "memory_read" | "memory_write" | "ppu_scanline" | "vblank";
   value?: number;
 }
+
+export interface DisasmInstruction {
+  address: number;
+  bytes: [number, number, number];
+  len: number;
+  mnemonic: string;
+  operand: string;
+}
+
+export interface DisasmResult {
+  instructions: DisasmInstruction[];
+  pc_index: number;
+}

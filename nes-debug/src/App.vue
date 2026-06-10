@@ -2,6 +2,7 @@
 import { useEmulator } from "./composables/useEmulator";
 import ToolBar from "./components/ToolBar.vue";
 import GameScreen from "./components/GameScreen.vue";
+import DisassemblyView from "./components/DisassemblyView.vue";
 import CpuPanel from "./components/CpuPanel.vue";
 import PpuPanel from "./components/PpuPanel.vue";
 import MemoryView from "./components/MemoryView.vue";
@@ -47,10 +48,13 @@ function onToolbarEvent(event: string, payload?: string) {
     />
 
     <div class="flex flex-1 overflow-hidden">
-      <!-- 左侧：游戏画面 -->
+      <!-- 左侧：游戏画面 + 反汇编 -->
       <div class="flex-1 flex flex-col min-w-0">
         <GameScreen :frame="emu.frameData.value" />
-        <MemoryView :running="emu.running.value" :paused="emu.paused.value" :tick="emu.tick.value" class="flex-1 m-2" />
+        <div class="flex flex-1 gap-2 m-2 min-h-0">
+          <DisassemblyView :result="emu.disasmResult.value" class="flex-1 min-w-0" />
+          <MemoryView :running="emu.running.value" :paused="emu.paused.value" :tick="emu.tick.value" class="flex-1 min-w-0" />
+        </div>
       </div>
 
       <!-- 右侧：Debug 面板 -->

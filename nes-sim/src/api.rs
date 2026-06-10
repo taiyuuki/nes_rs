@@ -121,6 +121,23 @@ pub struct DebugSnapshot {
     pub ppu: PpuDebugSnapshot,
 }
 
+#[cfg(feature = "debug")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DisassembledInstruction {
+    pub address: u16,
+    pub bytes: [u8; 3],
+    pub len: u8,
+    pub mnemonic: String,
+    pub operand: String,
+}
+
+#[cfg(feature = "debug")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DisassemblyResult {
+    pub instructions: Vec<DisassembledInstruction>,
+    pub pc_index: usize,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MemorySnapshot<'a> {
     pub ram: &'a [u8; 0x800],

@@ -17,7 +17,7 @@ pub use api::{
     PpuDebugSnapshot, VIDEO_FRAME_PITCH, VideoFrame,
 };
 #[cfg(feature = "debug")]
-pub use api::{Breakpoint, Debugger, MemorySnapshot};
+pub use api::{Breakpoint, Debugger, DisassemblyResult, DisassembledInstruction, MemorySnapshot};
 pub use apu::ExpansionAudioChip;
 pub use cartridge::{Cartridge, CartridgeError, Mirroring, TVSystem};
 pub use input::{ControllerButton, ControllerState};
@@ -284,6 +284,12 @@ impl NES {
     #[cfg(feature = "debug")]
     pub fn debug_memory_snapshot(&self) -> MemorySnapshot<'_> {
         self.bus.debug_memory_snapshot()
+    }
+
+    #[cfg(feature = "debug")]
+    pub fn debug_disassemble(&mut self, rows: usize) -> DisassemblyResult {
+        let pc = self.cpu.pc();
+        cpu::disassemble_range(&mut self.bus, pc, rows, rows)
     }
 
     pub fn save_state(&self) -> Result<Vec<u8>, SaveStateError> {

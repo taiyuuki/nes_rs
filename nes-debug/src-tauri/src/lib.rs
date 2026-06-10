@@ -22,6 +22,7 @@ pub fn run() {
             emulator::add_breakpoint,
             emulator::remove_breakpoint,
             emulator::set_paused,
+            emulator::disassemble,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

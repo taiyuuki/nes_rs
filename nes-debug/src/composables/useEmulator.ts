@@ -1,8 +1,9 @@
 import { ref, shallowRef } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import type { DebugInfo, FrameData } from "../types";
+import type { DebugInfo, DisasmResult, FrameData } from "../types";
 
 const debugInfo = shallowRef<DebugInfo | null>(null);
+const disasmResult = shallowRef<DisasmResult | null>(null);
 const frameData = shallowRef<FrameData | null>(null);
 const paused = ref(true);
 const running = ref(false);
@@ -42,6 +43,7 @@ export function useEmulator() {
       const info = await invoke<DebugInfo>("step_frame");
       debugInfo.value = info;
       await fetchFrame();
+      await fetchDisasm();
       tick.value++;
     } catch (e) {
       error.value = String(e);
@@ -54,6 +56,7 @@ export function useEmulator() {
       const info = await invoke<DebugInfo>("step_instruction");
       debugInfo.value = info;
       await fetchFrame();
+      await fetchDisasm();
       tick.value++;
     } catch (e) {
       error.value = String(e);
@@ -136,6 +139,7 @@ export function useEmulator() {
       const info = await invoke<DebugInfo>("get_debug_info");
       debugInfo.value = info;
       await fetchFrame();
+      await fetchDisasm();
     } catch (e) {
       error.value = String(e);
     }
@@ -150,8 +154,18 @@ export function useEmulator() {
     }
   }
 
+  async function fetchDisasm() {
+    try {
+      const result = await invoke<DisasmResult>("disassemble", { rows: 10 });
+      disasmResult.value = result;
+    } catch (e) {
+      disasmResult.value = null;
+    }
+  }
+
   return {
     debugInfo,
+    disasmResult,
     frameData,
     paused,
     running,

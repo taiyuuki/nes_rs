@@ -228,6 +228,42 @@ pub fn set_paused(paused: bool) -> Result<(), String> {
     })
 }
 
+#[derive(serde::Serialize, Clone)]
+pub struct DisasmInstruction {
+    pub address: u16,
+    pub bytes: [u8; 3],
+    pub len: u8,
+    pub mnemonic: String,
+    pub operand: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct DisasmResult {
+    pub instructions: Vec<DisasmInstruction>,
+    pub pc_index: usize,
+}
+
+#[tauri::command]
+pub fn disassemble(rows: usize) -> Result<DisasmResult, String> {
+    with_runtime(|rt| {
+        let result = rt.nes_mut().debug_disassemble(rows);
+        Ok(DisasmResult {
+            instructions: result
+                .instructions
+                .into_iter()
+                .map(|i| DisasmInstruction {
+                    address: i.address,
+                    bytes: i.bytes,
+                    len: i.len,
+                    mnemonic: i.mnemonic,
+                    operand: i.operand,
+                })
+                .collect(),
+            pc_index: result.pc_index,
+        })
+    })
+}
+
 fn debug_info_from_snapshot(
     snap: &nes_sim::RuntimeSnapshot,
 ) -> DebugInfo {

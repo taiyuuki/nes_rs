@@ -1808,5 +1808,194 @@ impl CPU {
     }
 }
 
+#[cfg(feature = "debug")]
+use crate::api::{DisassembledInstruction, DisassemblyResult};
+
+#[cfg(feature = "debug")]
+fn opcode_mnemonic(op: OpCode) -> &'static str {
+    match op {
+        OpCode::BRK => "BRK",
+        OpCode::ORA => "ORA",
+        OpCode::SLO => "SLO",
+        OpCode::NOP => "NOP",
+        OpCode::ASL => "ASL",
+        OpCode::PHP => "PHP",
+        OpCode::BPL => "BPL",
+        OpCode::CLC => "CLC",
+        OpCode::JSR => "JSR",
+        OpCode::AND => "AND",
+        OpCode::RLA => "RLA",
+        OpCode::BIT => "BIT",
+        OpCode::ROL => "ROL",
+        OpCode::PLP => "PLP",
+        OpCode::BMI => "BMI",
+        OpCode::SEC => "SEC",
+        OpCode::RTI => "RTI",
+        OpCode::EOR => "EOR",
+        OpCode::LSR => "LSR",
+        OpCode::PHA => "PHA",
+        OpCode::JMP => "JMP",
+        OpCode::BVC => "BVC",
+        OpCode::CLI => "CLI",
+        OpCode::RTS => "RTS",
+        OpCode::ADC => "ADC",
+        OpCode::RRA => "RRA",
+        OpCode::ROR => "ROR",
+        OpCode::PLA => "PLA",
+        OpCode::BVS => "BVS",
+        OpCode::SEI => "SEI",
+        OpCode::STA => "STA",
+        OpCode::SAX => "SAX",
+        OpCode::STY => "STY",
+        OpCode::STX => "STX",
+        OpCode::DEY => "DEY",
+        OpCode::TXA => "TXA",
+        OpCode::BCC => "BCC",
+        OpCode::TYA => "TYA",
+        OpCode::TXS => "TXS",
+        OpCode::LDY => "LDY",
+        OpCode::LDA => "LDA",
+        OpCode::LDX => "LDX",
+        OpCode::LAX => "LAX",
+        OpCode::TAY => "TAY",
+        OpCode::TAX => "TAX",
+        OpCode::BCS => "BCS",
+        OpCode::CLV => "CLV",
+        OpCode::TSX => "TSX",
+        OpCode::CPY => "CPY",
+        OpCode::CMP => "CMP",
+        OpCode::DCP => "DCP",
+        OpCode::DEC => "DEC",
+        OpCode::INY => "INY",
+        OpCode::DEX => "DEX",
+        OpCode::BNE => "BNE",
+        OpCode::CLD => "CLD",
+        OpCode::CPX => "CPX",
+        OpCode::SBC => "SBC",
+        OpCode::ISC => "ISC",
+        OpCode::INC => "INC",
+        OpCode::INX => "INX",
+        OpCode::BEQ => "BEQ",
+        OpCode::SED => "SED",
+        OpCode::ANC => "ANC",
+        OpCode::SRE => "SRE",
+        OpCode::ALR => "ALR",
+        OpCode::ARR => "ARR",
+        OpCode::XAA => "XAA",
+        OpCode::AXS => "AXS",
+        OpCode::AHX => "AHX",
+        OpCode::SHX => "SHX",
+        OpCode::SHY => "SHY",
+        OpCode::TAS => "TAS",
+        OpCode::LAS => "LAS",
+        OpCode::KIL => "KIL",
+    }
+}
+
+#[cfg(feature = "debug")]
+fn inst_size(mode: AddrMode) -> usize {
+    match mode {
+        AddrMode::IMP => 1,
+        AddrMode::IMM | AddrMode::ZP0 | AddrMode::ZPX | AddrMode::ZPY | AddrMode::REL => 2,
+        AddrMode::ABS | AddrMode::ABX | AddrMode::ABY | AddrMode::IND | AddrMode::IZX
+        | AddrMode::IZY => 3,
+    }
+}
+
+#[cfg(feature = "debug")]
+fn format_operand(mode: AddrMode, bytes: &[u8], pc: u16) -> (String, usize) {
+    let size = inst_size(mode);
+    let lo = bytes.get(1).copied().unwrap_or(0);
+    let hi = bytes.get(2).copied().unwrap_or(0);
+    let word = (hi as u16) << 8 | lo as u16;
+
+    let operand = match mode {
+        AddrMode::IMP => String::new(),
+        AddrMode::IMM => format!("#${lo:02X}"),
+        AddrMode::ZP0 => format!("${lo:02X}"),
+        AddrMode::ZPX => format!("${lo:02X},X"),
+        AddrMode::ZPY => format!("${lo:02X},Y"),
+        AddrMode::REL => {
+            let target = pc.wrapping_add(2).wrapping_add((lo as i8) as u16);
+            format!("${target:04X}")
+        }
+        AddrMode::ABS => format!("${word:04X}"),
+        AddrMode::ABX => format!("${word:04X},X"),
+        AddrMode::ABY => format!("${word:04X},Y"),
+        AddrMode::IND => format!("(${word:04X})"),
+        AddrMode::IZX => format!("(${lo:02X},X)"),
+        AddrMode::IZY => format!("(${lo:02X}),Y"),
+    };
+    (operand, size)
+}
+
+#[cfg(feature = "debug")]
+pub fn disassemble_one(bus: &mut impl CPUBus, addr: u16) -> DisassembledInstruction {
+    let mut bytes = [0u8; 3];
+    bytes[0] = bus.cpu_read(addr);
+    bytes[1] = bus.cpu_read(addr.wrapping_add(1));
+    bytes[2] = bus.cpu_read(addr.wrapping_add(2));
+
+    let inst = INST_SET[bytes[0] as usize];
+    let mnemonic = opcode_mnemonic(inst.0).to_string();
+    let (operand, len) = format_operand(inst.1, &bytes, addr);
+
+    DisassembledInstruction {
+        address: addr,
+        bytes,
+        len: len as u8,
+        mnemonic,
+        operand,
+    }
+}
+
+#[cfg(feature = "debug")]
+pub fn disassemble_range(
+    bus: &mut impl CPUBus,
+    center_pc: u16,
+    before: usize,
+    after: usize,
+) -> DisassemblyResult {
+    // Backtrack: scan forward from (center_pc - before*3) and find where center_pc lands
+    let start_addr = center_pc.wrapping_sub((before * 3) as u16);
+
+    // Decode forward from start_addr to collect enough instructions
+    let mut all = Vec::new();
+    let mut addr = start_addr;
+    let mut pc_index = 0;
+    let mut found_pc = false;
+    let total = before + after + 1;
+
+    for _ in 0..total * 3 {
+        let inst = disassemble_one(bus, addr);
+        if addr == center_pc {
+            pc_index = all.len();
+            found_pc = true;
+        }
+        let step = inst.len as u16;
+        all.push(inst);
+        if found_pc && all.len() - pc_index > after {
+            break;
+        }
+        addr = addr.wrapping_add(step);
+    }
+
+    // Find the first instruction that is <= center_pc
+    // Trim instructions before 'before' count relative to PC
+    let start = if pc_index > before {
+        pc_index - before
+    } else {
+        0
+    };
+    let end = std::cmp::min(all.len(), pc_index + after + 1);
+    let instructions = all[start..end].to_vec();
+    let pc_index = pc_index - start;
+
+    DisassemblyResult {
+        instructions,
+        pc_index,
+    }
+}
+
 #[cfg(test)]
 mod tests;
