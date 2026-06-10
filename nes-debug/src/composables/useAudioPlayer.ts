@@ -14,6 +14,9 @@ export function useAudioPlayer() {
 
     let unlisten: (() => void) | null = null
     let gainNode: GainNode | null = null
+    let audioBuffer: Float32Array | null = null
+    let accumulatedSamples = 0
+    const BUFFER_THRESHOLD = 1470 // 约 33ms 的缓冲
 
     // 从 localStorage 读取状态
     onMounted(() => {
@@ -38,7 +41,10 @@ export function useAudioPlayer() {
     // 初始化 AudioContext
     async function initAudioContext() {
         if (!audioContext.value) {
-            audioContext.value = new AudioContext({ sampleRate: 44100 })
+
+            // 不强制设置采样率，使用系统默认值
+            audioContext.value = new AudioContext()
+            console.log(`[Audio] AudioContext 创建，采样率: ${audioContext.value.sampleRate}Hz`)
         }
 
         // 恢复 AudioContext（浏览器可能暂停它）
@@ -52,8 +58,18 @@ export function useAudioPlayer() {
                 await audioContext.value.audioWorklet.addModule(workletUrl)
                 console.log('[AudioWorklet] Module 加载成功')
 
-                // 创建 AudioWorkletNode
-                workletNode.value = new AudioWorkletNode(audioContext.value, 'audio-processor')
+                // 创建 AudioWorkletNode，设置更大的 buffer size 以降低消费频率
+                workletNode.value = new AudioWorkletNode(
+                    audioContext.value,
+                    'audio-processor',
+                    {
+                        processorOptions: {
+
+                            // 设置为 4096 样本，约 93ms，减少 process 调用频率
+                            bufferSize: 4096,
+                        },
+                    },
+                )
 
                 // 创建增益节点用于音量控制
                 gainNode = audioContext.value.createGain()
@@ -64,11 +80,39 @@ export function useAudioPlayer() {
                 gainNode.connect(audioContext.value.destination)
 
                 console.log('[AudioWorklet] 音频节点已连接')
+
+                // 通知后端使用正确的采样率
+                console.log(`[Audio] 需要后端采样率: ${audioContext.value.sampleRate}Hz`)
             }
             catch(error) {
                 console.error('[AudioWorklet] 初始化失败:', error)
             }
         }
+    }
+
+    // 重采样函数：将音频从源采样率转换到目标采样率
+    function resampleAudio(samples: Float32Array, fromRate: number, toRate: number): Float32Array {
+        if (fromRate === toRate) {
+            return samples
+        }
+
+        const ratio = fromRate / toRate
+        const outputLength = Math.round(samples.length / ratio)
+        const output = new Float32Array(outputLength)
+
+        for (let i = 0; i < outputLength; i++) {
+            const srcIndex = i * ratio
+            const srcIndexLow = Math.floor(srcIndex)
+            const srcIndexHigh = Math.min(srcIndexLow + 1, samples.length - 1)
+            const frac = srcIndex - srcIndexLow
+
+            // 线性插值
+            output[i] = samples[srcIndexLow] * (1 - frac) + samples[srcIndexHigh] * frac
+        }
+
+        console.log(`[Audio] 重采样: ${fromRate}Hz -> ${toRate}Hz, 样本: ${samples.length} -> ${outputLength}`)
+
+        return output
     }
 
     // 播放音频样本
@@ -77,15 +121,57 @@ export function useAudioPlayer() {
             return
         }
 
-        const samples = new Float32Array(audioData.samples)
+        let samples = new Float32Array(audioData.samples)
+        const targetRate = audioContext.value?.sampleRate || 44100
 
-        // 发送音频数据到 AudioWorklet
-        workletNode.value.port.postMessage({
-            type: 'audio-data',
-            data: samples.buffer,
-        }, [samples.buffer])
+        // 如果采样率不匹配，进行重采样
+        if (audioData.sample_rate && audioData.sample_rate !== targetRate) {
+            samples = resampleAudio(samples, audioData.sample_rate, targetRate) as Float32Array<ArrayBuffer>
+        }
 
-        isPlaying.value = true
+        // 累积音频数据
+        if (!audioBuffer || audioBuffer.length - accumulatedSamples < samples.length) {
+
+            // 需要扩展或创建新缓冲区
+            const newBuffer = new Float32Array((audioBuffer?.length || 0) + samples.length + BUFFER_THRESHOLD)
+            if (audioBuffer) {
+                newBuffer.set(audioBuffer, 0)
+            }
+            audioBuffer = newBuffer
+        }
+
+        // 添加新样本到缓冲区
+        audioBuffer!.set(samples, accumulatedSamples)
+        accumulatedSamples += samples.length
+
+        // 当累积足够数据时，发送到 AudioWorklet
+        if (accumulatedSamples >= BUFFER_THRESHOLD) {
+            const samplesToSend = audioBuffer!.subarray(0, accumulatedSamples)
+
+            console.log(`[Audio] 发送 ${accumulatedSamples} 样本到 AudioWorklet`)
+
+            workletNode.value.port.postMessage({
+                type: 'audio-data',
+                data: samplesToSend.buffer,
+            }, [samplesToSend.buffer])
+
+            // 重置缓冲区（保留剩余部分）
+            const remaining = audioBuffer!.length - accumulatedSamples
+            if (remaining > 0) {
+                audioBuffer = audioBuffer!.subarray(accumulatedSamples)
+
+                // 创建新副本避免使用 subarray
+                const newBuffer = new Float32Array(remaining)
+                newBuffer.set(audioBuffer)
+                audioBuffer = newBuffer
+            }
+            else {
+                audioBuffer = null
+            }
+            accumulatedSamples = 0
+
+            isPlaying.value = true
+        }
 
         // 更新增益
         if (gainNode) {
@@ -147,6 +233,9 @@ export function useAudioPlayer() {
             audioContext.value = null
         }
 
+        // 清空缓冲区
+        audioBuffer = null
+        accumulatedSamples = 0
         isPlaying.value = false
         gainNode = null
     }
