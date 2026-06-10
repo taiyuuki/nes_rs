@@ -1,8 +1,10 @@
 use crate::apu::APU;
-use crate::cartridge::{Cartridge, CartridgeError};
+use crate::cartridge::{Cartridge, CartridgeError, Mirroring};
 use crate::dma::{DmaBusRequest, DmaController};
 use crate::input::{ControllerState, Joypad};
-use crate::ppu::{PPU, PPUBus};
+use crate::ppu::PPU;
+#[cfg(feature = "debug")]
+use crate::ppu::PPUBus;
 use crate::ppu_memory::PPUMemory;
 use crate::savestate::{SaveStateError, StateReader, StateWriter};
 
@@ -150,6 +152,10 @@ impl NESBus {
 
     pub fn cartridge_irq_line(&self) -> bool {
         self.ppu_memory.cartridge_irq_line()
+    }
+
+    pub fn mirroring(&self) -> Mirroring {
+        self.ppu_memory.mirroring()
     }
 
     #[allow(dead_code)]

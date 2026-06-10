@@ -486,8 +486,7 @@ fn save_state_round_trip_restores_debug_snapshot_and_video_output() {
 fn create_booted_nes(frames: usize) -> NES {
     let rom = make_ines_with_reset_vector(0x8000);
     let mut nes = NES::new();
-    nes.load_cartridge_ines(&rom)
-        .expect("test ROM should load");
+    nes.load_cartridge_ines(&rom).expect("test ROM should load");
     nes.reset();
     for _ in 0..frames {
         nes.run_frame();
@@ -497,8 +496,7 @@ fn create_booted_nes(frames: usize) -> NES {
 
 fn assert_round_trip_identical(nes: &mut NES) {
     let first = nes.save_state().expect("first save should succeed");
-    nes.load_state(&first)
-        .expect("load should succeed");
+    nes.load_state(&first).expect("load should succeed");
     let second = nes.save_state().expect("second save should succeed");
     assert_eq!(
         first, second,
@@ -558,8 +556,7 @@ fn save_state_round_trip_preserves_video_output() {
 fn save_state_round_trip_after_mid_frame() {
     let rom = make_ines_with_reset_vector(0x8000);
     let mut nes = NES::new();
-    nes.load_cartridge_ines(&rom)
-        .expect("test ROM should load");
+    nes.load_cartridge_ines(&rom).expect("test ROM should load");
     nes.reset();
     nes.run_frame();
     // 在下一帧的中间状态保存

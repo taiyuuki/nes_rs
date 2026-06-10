@@ -9,6 +9,7 @@ import MemoryView from './components/MemoryView.vue'
 import BreakpointPanel from './components/BreakpointPanel.vue'
 import StatusPanel from './components/StatusPanel.vue'
 import PatternTableView from './components/PatternTableView.vue'
+import NametableView from './components/NametableView.vue'
 
 const emu = useEmulator()
 
@@ -77,6 +78,10 @@ function onToolbarEvent(event: string, payload?: string) {
         <CpuPanel :cpu="emu.debugInfo.value?.cpu ?? null" />
         <PpuPanel :ppu="emu.debugInfo.value?.ppu ?? null" />
         <PatternTableView
+          :running="emu.running.value"
+          :tick="emu.tick.value"
+        />
+        <NametableView
           :running="emu.running.value"
           :tick="emu.tick.value"
         />

@@ -1897,7 +1897,11 @@ fn inst_size(mode: AddrMode) -> usize {
     match mode {
         AddrMode::IMP => 1,
         AddrMode::IMM | AddrMode::ZP0 | AddrMode::ZPX | AddrMode::ZPY | AddrMode::REL => 2,
-        AddrMode::ABS | AddrMode::ABX | AddrMode::ABY | AddrMode::IND | AddrMode::IZX
+        AddrMode::ABS
+        | AddrMode::ABX
+        | AddrMode::ABY
+        | AddrMode::IND
+        | AddrMode::IZX
         | AddrMode::IZY => 3,
     }
 }

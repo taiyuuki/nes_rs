@@ -65,3 +65,12 @@ export interface PatternTableData {
     table1: number[];
     size:   number;
 }
+
+export interface NametableData {
+    table0: number[];
+    table1: number[];
+    table2: number[];
+    table3: number[];
+    width:  number;
+    height: number;
+}

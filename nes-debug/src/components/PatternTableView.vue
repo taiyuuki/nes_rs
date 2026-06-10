@@ -80,7 +80,7 @@ onMounted(() => { if (props.running) fetchData() })
 }
 .pattern-canvas {
   image-rendering: pixelated;
-  image-rendering: crisp-edges;
+  /* image-rendering: crisp-edges; */
   width: 100%;
   height: auto;
   background: #181818;

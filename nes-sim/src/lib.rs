@@ -17,7 +17,7 @@ pub use api::{
     PpuDebugSnapshot, VIDEO_FRAME_PITCH, VideoFrame,
 };
 #[cfg(feature = "debug")]
-pub use api::{Breakpoint, Debugger, DisassemblyResult, DisassembledInstruction, MemorySnapshot};
+pub use api::{Breakpoint, Debugger, DisassembledInstruction, DisassemblyResult, MemorySnapshot};
 pub use apu::ExpansionAudioChip;
 pub use cartridge::{Cartridge, CartridgeError, Mirroring, TVSystem};
 pub use input::{ControllerButton, ControllerState};
@@ -284,6 +284,10 @@ impl NES {
     #[cfg(feature = "debug")]
     pub fn debug_memory_snapshot(&self) -> MemorySnapshot<'_> {
         self.bus.debug_memory_snapshot()
+    }
+
+    pub fn mirroring(&self) -> Mirroring {
+        self.bus.mirroring()
     }
 
     #[cfg(feature = "debug")]

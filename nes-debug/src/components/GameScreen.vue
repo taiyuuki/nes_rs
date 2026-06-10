@@ -53,6 +53,6 @@ canvas {
   max-width: 512px;
   height: auto;
   image-rendering: pixelated;
-  image-rendering: crisp-edges;
+  /* image-rendering: crisp-edges; */
 }
 </style>

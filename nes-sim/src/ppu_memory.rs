@@ -57,7 +57,7 @@ impl PPUMemory {
         }
     }
 
-    fn mirroring(&self) -> Mirroring {
+    pub fn mirroring(&self) -> Mirroring {
         self.cartridge.mirroring()
     }
 

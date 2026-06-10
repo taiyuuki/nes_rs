@@ -1,4 +1,4 @@
-use nes_sim::{Breakpoint, FrontendInput, FrontendRuntime, RunMode};
+use nes_sim::{Breakpoint, FrontendInput, FrontendRuntime, Mirroring, RunMode};
 use std::cell::RefCell;
 
 thread_local! {
@@ -179,6 +179,17 @@ pub struct PatternTableData {
     pub size: usize,
 }
 
+#[derive(serde::Serialize, Clone)]
+pub struct NametableData {
+    // 4 nametables, each 256x240 pixels, RGBA
+    pub table0: Vec<u8>,
+    pub table1: Vec<u8>,
+    pub table2: Vec<u8>,
+    pub table3: Vec<u8>,
+    pub width: usize,
+    pub height: usize,
+}
+
 #[tauri::command]
 pub fn get_pattern_tables() -> Result<PatternTableData, String> {
     with_runtime(|rt| {
@@ -192,6 +203,30 @@ pub fn get_pattern_tables() -> Result<PatternTableData, String> {
             table0,
             table1,
             size,
+        })
+    })
+}
+
+#[tauri::command]
+pub fn get_nametables() -> Result<NametableData, String> {
+    with_runtime(|rt| {
+        let snap = rt.snapshot();
+        let ctrl = snap.debug.ppu.ctrl;
+        let mirroring = rt.nes().mirroring();
+        let vram = rt.nes().debug_memory_snapshot().vram.to_vec();
+        let chr = rt.nes_mut().debug_read_chr().to_vec();
+        let palette = rt.nes().debug_memory_snapshot().palette.to_vec();
+
+        let width = NT_WIDTH * TILE_SIZE;
+        let height = NT_HEIGHT * TILE_SIZE;
+
+        Ok(NametableData {
+            table0: render_nametable(&vram, &chr, &palette, 0, ctrl, mirroring),
+            table1: render_nametable(&vram, &chr, &palette, 1, ctrl, mirroring),
+            table2: render_nametable(&vram, &chr, &palette, 2, ctrl, mirroring),
+            table3: render_nametable(&vram, &chr, &palette, 3, ctrl, mirroring),
+            width,
+            height,
         })
     })
 }
@@ -230,6 +265,122 @@ fn render_pattern_table(chr: &[u8], offset: usize) -> Vec<u8> {
                 pixels[idx + 1] = c[1];
                 pixels[idx + 2] = c[2];
                 pixels[idx + 3] = c[3];
+            }
+        }
+    }
+    pixels
+}
+
+const NT_WIDTH: usize = 32;
+const NT_HEIGHT: usize = 30;
+const TILE_SIZE: usize = 8;
+
+fn render_nametable(
+    vram: &[u8],
+    chr: &[u8],
+    palette: &[u8],
+    table_idx: usize,
+    ctrl: u8,
+    mirroring: Mirroring,
+) -> Vec<u8> {
+    let width = NT_WIDTH * TILE_SIZE;
+    let height = NT_HEIGHT * TILE_SIZE;
+    let mut pixels = vec![0u8; width * height * 4];
+
+    let bg_table = if (ctrl & 0x10) != 0 { 0x1000 } else { 0x0000 };
+
+    // 根据 mirroring 模式计算 nametable 偏移
+    // 模仿 ppu_memory.rs 中的 nametable_index 逻辑
+    let nt_base_offset = match mirroring {
+        Mirroring::Horizontal => {
+            if table_idx == 0 || table_idx == 1 {
+                0 // $2000/$2400 → VRAM[0-0x3FF]
+            } else {
+                0x0400 // $2800/$2C00 → VRAM[0x400-0x7FF]
+            }
+        }
+        Mirroring::Vertical => {
+            if table_idx == 0 || table_idx == 2 {
+                0 // $2000/$2800 → VRAM[0-0x3FF]
+            } else {
+                0x0400 // $2400/$2C00 → VRAM[0x400-0x7FF]
+            }
+        }
+        Mirroring::FourScreen => {
+            table_idx * 0x0400 // 每个都有独立空间
+        }
+        Mirroring::SPAGE0 => {
+            0 // 所有都映射到第一个页面
+        }
+        Mirroring::SPAGE1 => {
+            0x0400 // 所有都映射到第二个页面
+        }
+    };
+
+    const COLORS: [[u8; 3]; 64] = [
+        [84, 84, 84], [0, 30, 116], [8, 16, 144], [48, 0, 136],
+        [68, 0, 100], [92, 0, 48], [84, 4, 0], [60, 24, 0],
+        [32, 42, 0], [8, 58, 0], [0, 64, 0], [0, 60, 0],
+        [0, 50, 60], [0, 0, 0], [0, 0, 0], [0, 0, 0],
+        [152, 150, 152], [8, 76, 196], [48, 50, 236], [92, 30, 228],
+        [136, 20, 176], [160, 20, 100], [152, 34, 32], [120, 60, 0],
+        [84, 90, 0], [40, 114, 0], [8, 124, 0], [0, 118, 40],
+        [0, 102, 120], [0, 0, 0], [0, 0, 0], [0, 0, 0],
+        [236, 238, 236], [76, 154, 236], [120, 124, 236], [176, 98, 236],
+        [228, 84, 236], [236, 88, 180], [236, 106, 100], [212, 136, 32],
+        [160, 170, 0], [116, 196, 0], [76, 208, 32], [56, 204, 108],
+        [56, 180, 204], [60, 60, 60], [0, 0, 0], [0, 0, 0],
+        [236, 238, 236], [168, 204, 236], [188, 188, 236], [212, 178, 236],
+        [236, 174, 236], [236, 174, 212], [236, 180, 176], [228, 196, 144],
+        [204, 210, 120], [180, 222, 120], [168, 226, 144], [152, 226, 180],
+        [160, 214, 228], [160, 162, 160], [0, 0, 0], [0, 0, 0],
+    ];
+
+    for tile_y in 0..NT_HEIGHT {
+        for tile_x in 0..NT_WIDTH {
+            let tile_idx = tile_y * NT_WIDTH + tile_x;
+            // nametable 数据在 VRAM 中的偏移
+            let nt_addr = nt_base_offset + tile_idx;
+
+            let tile_id = vram.get(nt_addr).copied().unwrap_or(0) as usize;
+            let tile_addr = bg_table + tile_id * 16;
+
+            // attribute table 在每个 nametable 后面
+            let attr_block_x = tile_x / 4;
+            let attr_block_y = tile_y / 4;
+            let attr_shift = ((tile_y % 4) / 2) * 2 + ((tile_x % 4) / 2);
+            let attr_byte_idx = attr_block_y * 8 + attr_block_x;
+            let attr_addr = nt_base_offset + 0x03C0 + attr_byte_idx;
+            let palette_idx = ((vram.get(attr_addr).copied().unwrap_or(0) >> attr_shift) & 0x03) as usize;
+
+            let palette_base = [0, 4, 8, 12][palette_idx];
+            let base_color = palette.get(0).copied().unwrap_or(0) as usize;
+            let palette_colors = [
+                base_color,
+                palette.get(palette_base).copied().unwrap_or(0) as usize,
+                palette.get(palette_base + 1).copied().unwrap_or(0) as usize,
+                palette.get(palette_base + 2).copied().unwrap_or(0) as usize,
+            ];
+
+            for y in 0..8 {
+                let lo = chr.get(tile_addr + y).copied().unwrap_or(0);
+                let hi = chr.get(tile_addr + 8 + y).copied().unwrap_or(0);
+
+                for x in 0..8 {
+                    let bit_lo = (lo >> (7 - x)) & 1;
+                    let bit_hi = (hi >> (7 - x)) & 1;
+                    let pixel_idx = ((bit_hi << 1) | bit_lo) as usize;
+
+                    let px = tile_x * TILE_SIZE + x;
+                    let py = tile_y * TILE_SIZE + y;
+                    let out_idx = (py * width + px) * 4;
+
+                    let color = COLORS[palette_colors[pixel_idx] & 0x3F];
+                    pixels[out_idx] = color[0];
+                    pixels[out_idx + 1] = color[1];
+                    pixels[out_idx + 2] = color[2];
+                    pixels[out_idx + 3] = 255;
+                }
             }
         }
     }

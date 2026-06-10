@@ -24,6 +24,7 @@ pub fn run() {
             emulator::set_paused,
             emulator::disassemble,
             emulator::get_pattern_tables,
+            emulator::get_nametables,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
