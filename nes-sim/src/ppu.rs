@@ -1394,6 +1394,7 @@ impl PPU {
         bus.ppu_read(addr)
     }
 
+    #[inline]
     fn ppu_read_bus_exposed(&mut self, bus: &mut impl PPUBus, addr: u16) -> u8 {
         let addr = addr & 0x3FFF;
         self.observe_mapper_a12_line(bus, addr);

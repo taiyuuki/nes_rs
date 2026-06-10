@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 pub(crate) mod expansion_audio;
 mod mappers;
 
-use self::mappers::{MapperEnum, from_mapper_id};
+use self::mappers::{MapperEnum, NoMapper, from_mapper_id};
 use crate::apu::ExpansionAudioChip;
 use crate::savestate::{SaveStateError, StateReader, StateWriter};
 
@@ -157,6 +157,33 @@ struct CartridgeHeader {
 }
 
 impl CartridgeHeader {
+    fn from_no_header() -> Self {
+        Self {
+            raw: Vec::new(),
+            format: RomFormat::INES,
+            mapper_id: 9999,
+            submapper: 255,
+            mirroring: Mirroring::Vertical,
+            has_battery_backed_ram: false,
+            has_trainer: false,
+            has_bus_conflicts: false,
+            console_type: 0,
+            console_type_data: 0,
+            timing_mode: TimingMode::NTSC,
+            tv_system: TVSystem::NTSC,
+            prg_rom_size: 0,
+            prg_ram_size: 0,
+            prg_nvram_size: 0,
+            chr_rom_size: 0,
+            chr_ram_size: 0,
+            chr_nvram_size: 0,
+            misc_rom_count: 0,
+            defaut_expansion_device: 0,
+            has_prg_ram_info: false,
+            uses_exponent_rom_size_encoding: false,
+        }
+    }
+
     fn parse(rom: &[u8]) -> Result<CartridgeHeader, CartridgeError> {
         if rom.len() < INES_HEADER_LEN {
             return Err(CartridgeError::FileTooSmall);
@@ -311,7 +338,6 @@ impl CartridgeHeader {
     }
 }
 
-#[allow(dead_code)]
 pub struct Cartridge {
     mapper: MapperEnum,
     expansion_chips: Vec<Box<dyn ExpansionAudioChip>>,
@@ -319,6 +345,14 @@ pub struct Cartridge {
 }
 
 impl Cartridge {
+    pub fn from_no_cart() -> Self {
+        Self {
+            mapper: MapperEnum::NoMapper(NoMapper::new()),
+            expansion_chips: Vec::new(),
+            header: CartridgeHeader::from_no_header(),
+        }
+    }
+
     pub fn from_ines(rom: &[u8]) -> Result<Self, CartridgeError> {
         let header = CartridgeHeader::parse(rom)?;
 

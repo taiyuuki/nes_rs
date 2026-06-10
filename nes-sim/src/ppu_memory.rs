@@ -6,7 +6,7 @@ pub(super) struct PPUMemory {
     chr_ram: [u8; 0x2000],
     vram: [u8; 0x1000],
     palette: [u8; 0x20],
-    cartridge: Option<Cartridge>,
+    cartridge: Cartridge,
 }
 
 impl PPUMemory {
@@ -15,7 +15,7 @@ impl PPUMemory {
             chr_ram: [0; 0x2000],
             vram: [0; 0x1000],
             palette: [0; 0x20],
-            cartridge: None,
+            cartridge: Cartridge::from_no_cart(),
         }
     }
 
@@ -32,11 +32,7 @@ impl PPUMemory {
     }
 
     fn nametable_index(&self, addr: u16) -> usize {
-        if let Some(index) = self
-            .cartridge
-            .as_ref()
-            .and_then(|c| c.map_nametable_addr(addr))
-        {
+        if let Some(index) = self.cartridge.map_nametable_addr(addr) {
             return index;
         }
 
@@ -62,53 +58,40 @@ impl PPUMemory {
     }
 
     fn mirroring(&self) -> Mirroring {
-        self.cartridge
-            .as_ref()
-            .map(|c| c.mirroring())
-            .unwrap_or(Mirroring::Horizontal)
+        self.cartridge.mirroring()
     }
 
     pub(super) fn insert_cartridge(&mut self, cartridge: Cartridge) {
-        self.cartridge = Some(cartridge);
+        self.cartridge = cartridge;
     }
 
     pub(super) fn cartridge_cpu_read(&mut self, addr: u16) -> Option<u8> {
-        self.cartridge.as_mut().and_then(|c| c.cpu_read(addr))
+        self.cartridge.cpu_read(addr)
     }
 
     pub(super) fn cartridge_cpu_write(&mut self, addr: u16, data: u8) -> bool {
-        self.cartridge
-            .as_mut()
-            .is_some_and(|c| c.cpu_write(addr, data))
+        self.cartridge.cpu_write(addr, data)
     }
 
     pub(super) fn cartridge_irq_line(&self) -> bool {
-        self.cartridge.as_ref().is_some_and(|c| c.irq_line())
+        self.cartridge.irq_line()
     }
 
     pub(super) fn cartridge_tick_cpu_cycle(&mut self) {
-        if let Some(cartridge) = &mut self.cartridge {
-            cartridge.tick_cpu_cycle();
-        }
+        self.cartridge.tick_cpu_cycle();
     }
 
     #[allow(dead_code)]
     pub(super) fn notify_scanline(&mut self, scanline: i16, rendering_on: bool) {
-        if let Some(cartridge) = &mut self.cartridge {
-            cartridge.notify_scanline(scanline, rendering_on);
-        }
+        self.cartridge.notify_scanline(scanline, rendering_on);
     }
 
     pub(super) fn ppu_read_nametable(&mut self, addr: u16) -> Option<u8> {
-        self.cartridge
-            .as_mut()
-            .and_then(|c| c.ppu_read_nametable(addr))
+        self.cartridge.ppu_read_nametable(addr)
     }
 
     pub(super) fn ppu_write_nametable(&mut self, addr: u16, data: u8) -> bool {
-        self.cartridge
-            .as_mut()
-            .is_some_and(|c| c.ppu_write_nametable(addr, data))
+        self.cartridge.ppu_write_nametable(addr, data)
     }
 
     #[cfg(feature = "debug")]
@@ -130,14 +113,8 @@ impl PPUMemory {
         writer.write_bytes(&self.chr_ram);
         writer.write_bytes(&self.vram);
         writer.write_bytes(&self.palette);
-        match &self.cartridge {
-            Some(cartridge) => {
-                writer.write_bool(true);
-                cartridge.save_state(writer);
-                Ok(())
-            }
-            None => Err(SaveStateError::NoCartridge),
-        }
+        self.cartridge.save_state(writer);
+        Ok(())
     }
 
     pub(super) fn load_state(
@@ -147,14 +124,8 @@ impl PPUMemory {
         reader.read_bytes_into(&mut self.chr_ram)?;
         reader.read_bytes_into(&mut self.vram)?;
         reader.read_bytes_into(&mut self.palette)?;
-        let has_cartridge = reader.read_bool()?;
-        match (&mut self.cartridge, has_cartridge) {
-            (Some(cartridge), true) => cartridge.load_state(reader),
-            (None, _) => Err(SaveStateError::NoCartridge),
-            _ => Err(SaveStateError::InvalidData(
-                "save state expected a loaded cartridge",
-            )),
-        }
+        self.cartridge.load_state(reader)?;
+        Ok(())
     }
 }
 
@@ -170,8 +141,7 @@ impl PPUBus for PPUMemory {
         match addr {
             0x0000..=0x1FFF => self
                 .cartridge
-                .as_mut()
-                .and_then(|c| c.ppu_read(addr))
+                .ppu_read(addr)
                 .unwrap_or_else(|| self.chr_ram[addr as usize]),
             0x2000..=0x3EFF => {
                 if let Some(data) = self.ppu_read_nametable(addr) {
@@ -189,11 +159,7 @@ impl PPUBus for PPUMemory {
         let addr = Self::normalize_addr(addr);
         match addr {
             0x0000..=0x1FFF => {
-                if !self
-                    .cartridge
-                    .as_mut()
-                    .is_some_and(|c| c.ppu_write(addr, data))
-                {
+                if !self.cartridge.ppu_write(addr, data) {
                     self.chr_ram[addr as usize] = data;
                 }
             }
@@ -208,20 +174,14 @@ impl PPUBus for PPUMemory {
     }
 
     fn check_a12(&mut self, addr: u16, ppu_cycle: u64) {
-        if let Some(cartridge) = &mut self.cartridge {
-            cartridge.check_a12(addr, ppu_cycle);
-        }
+        self.cartridge.check_a12(addr, ppu_cycle);
     }
 
     fn notify_scanline(&mut self, scanline: i16, rendering_on: bool) {
-        if let Some(cartridge) = &mut self.cartridge {
-            cartridge.notify_scanline(scanline, rendering_on);
-        }
+        self.cartridge.notify_scanline(scanline, rendering_on);
     }
 
     fn set_ppu_sprite_phase(&mut self, sprite_phase: bool) {
-        if let Some(cartridge) = &mut self.cartridge {
-            cartridge.set_ppu_sprite_phase(sprite_phase);
-        }
+        self.cartridge.set_ppu_sprite_phase(sprite_phase);
     }
 }

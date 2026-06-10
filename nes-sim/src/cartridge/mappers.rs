@@ -110,8 +110,40 @@ pub(super) trait Mapper {
     fn ppu_write_nametable(&mut self, _addr: u16, _data: u8) -> bool {
         false
     }
-    fn save_state(&self, writer: &mut StateWriter);
-    fn load_state(&mut self, reader: &mut StateReader<'_>) -> Result<(), SaveStateError>;
+    fn save_state(&self, _writer: &mut StateWriter) {}
+    fn load_state(&mut self, _reader: &mut StateReader<'_>) -> Result<(), SaveStateError> {
+        Ok(())
+    }
+}
+
+pub struct NoMapper {}
+
+impl NoMapper {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Mapper for NoMapper {
+    fn cpu_read(&mut self, _addr: u16) -> Option<u8> {
+        None
+    }
+
+    fn cpu_write(&mut self, _addr: u16, _data: u8) -> bool {
+        false
+    }
+
+    fn ppu_read(&mut self, _addr: u16) -> Option<u8> {
+        None
+    }
+
+    fn ppu_write(&mut self, _addr: u16, _data: u8) -> bool {
+        false
+    }
+
+    fn mirroring(&self) -> Mirroring {
+        Mirroring::Vertical
+    }
 }
 
 pub fn encode_mirroring(mirroring: Mirroring) -> u8 {
@@ -140,6 +172,7 @@ pub fn decode_mirroring(encoded: u8) -> Result<Mirroring, SaveStateError> {
 macro_rules! dispatch_mapper {
     ($self:expr, $method:ident($($arg:expr),*)) => {
         match $self {
+            Self::NoMapper(m) => m.$method($($arg),*),
             Self::Nrom(m) => m.$method($($arg),*),
             Self::Mmc1(m) => m.$method($($arg),*),
             Self::Uxrom(m) => m.$method($($arg),*),
@@ -188,6 +221,7 @@ macro_rules! dispatch_mapper {
 
 #[allow(private_interfaces)]
 pub(super) enum MapperEnum {
+    NoMapper(NoMapper),
     Nrom(Nrom),
     Mmc1(Mmc1),
     Uxrom(Uxrom),
