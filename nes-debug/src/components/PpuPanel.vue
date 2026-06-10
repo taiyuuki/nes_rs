@@ -1,19 +1,23 @@
 <script setup lang="ts">
-import type { PpuInfo } from "../types";
+import type { PpuInfo } from '../types'
 
-defineProps<{
-  ppu: PpuInfo | null;
-}>();
+defineProps<{ ppu: PpuInfo | null; }>()
 
 function hex(value: number, width: number = 2): string {
-  return "$" + value.toString(16).toUpperCase().padStart(width, "0");
+    return `$${value.toString(16).toUpperCase()
+        .padStart(width, '0')}`
 }
 </script>
 
 <template>
   <div class="panel">
-    <h3 class="panel-title">PPU</h3>
-    <div v-if="ppu" class="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
+    <h3 class="panel-title">
+      PPU
+    </h3>
+    <div
+      v-if="ppu"
+      class="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs"
+    >
       <div class="reg-row">
         <span class="reg-label">Frame</span>
         <span class="reg-value">{{ ppu.frame }}</span>
@@ -39,7 +43,10 @@ function hex(value: number, width: number = 2): string {
         <span class="reg-value">{{ hex(ppu.temp_vram_addr, 4) }}</span>
       </div>
     </div>
-    <div v-if="ppu" class="mt-2 space-y-0.5 text-xs">
+    <div
+      v-if="ppu"
+      class="mt-2 space-y-0.5 text-xs"
+    >
       <div class="flex gap-3">
         <span class="reg-label w-8">CTRL</span>
         <span class="reg-value font-mono">{{ hex(ppu.ctrl) }}</span>
@@ -59,7 +66,12 @@ function hex(value: number, width: number = 2): string {
         <span :class="ppu.nmi_line ? 'badge-on' : 'badge-off'">NMI</span>
       </div>
     </div>
-    <div v-else class="text-[#666] text-xs">No data</div>
+    <div
+      v-else
+      class="text-[#666] text-xs"
+    >
+      No data
+    </div>
   </div>
 </template>
 

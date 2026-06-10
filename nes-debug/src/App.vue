@@ -1,40 +1,41 @@
 <script setup lang="ts">
-import { useEmulator } from "./composables/useEmulator";
-import ToolBar from "./components/ToolBar.vue";
-import GameScreen from "./components/GameScreen.vue";
-import DisassemblyView from "./components/DisassemblyView.vue";
-import CpuPanel from "./components/CpuPanel.vue";
-import PpuPanel from "./components/PpuPanel.vue";
-import MemoryView from "./components/MemoryView.vue";
-import BreakpointPanel from "./components/BreakpointPanel.vue";
-import StatusPanel from "./components/StatusPanel.vue";
-import PatternTableView from "./components/PatternTableView.vue";
+import { useEmulator } from './composables/useEmulator'
+import ToolBar from './components/ToolBar.vue'
+import GameScreen from './components/GameScreen.vue'
+import DisassemblyView from './components/DisassemblyView.vue'
+import CpuPanel from './components/CpuPanel.vue'
+import PpuPanel from './components/PpuPanel.vue'
+import MemoryView from './components/MemoryView.vue'
+import BreakpointPanel from './components/BreakpointPanel.vue'
+import StatusPanel from './components/StatusPanel.vue'
+import PatternTableView from './components/PatternTableView.vue'
 
-const emu = useEmulator();
+const emu = useEmulator()
 
 async function onToolbarAction(action: string) {
-  switch (action) {
-    case "reset":
-      await emu.reset();
-      break;
-    case "togglePause":
-      await emu.togglePause();
-      break;
-    case "stepFrame":
-      await emu.stepFrame();
-      break;
-    case "stepInstruction":
-      await emu.stepInstruction();
-      break;
-  }
+    switch (action) {
+        case 'reset':
+            await emu.reset()
+            break
+        case 'togglePause':
+            await emu.togglePause()
+            break
+        case 'stepFrame':
+            await emu.stepFrame()
+            break
+        case 'stepInstruction':
+            await emu.stepInstruction()
+            break
+    }
 }
 
 function onToolbarEvent(event: string, payload?: string) {
-  if (event === "loadRom" && payload) {
-    emu.loadRom(payload);
-  } else {
-    onToolbarAction(event);
-  }
+    if (event === 'loadRom' && payload) {
+        emu.loadRom(payload)
+    }
+    else {
+        onToolbarAction(event)
+    }
 }
 </script>
 
@@ -53,8 +54,16 @@ function onToolbarEvent(event: string, payload?: string) {
       <div class="flex-1 flex flex-col min-w-0">
         <GameScreen :frame="emu.frameData.value" />
         <div class="flex flex-1 gap-2 m-2 min-h-0">
-          <DisassemblyView :result="emu.disasmResult.value" class="flex-1 min-w-0" />
-          <MemoryView :running="emu.running.value" :paused="emu.paused.value" :tick="emu.tick.value" class="flex-1 min-w-0" />
+          <DisassemblyView
+            :result="emu.disasmResult.value"
+            class="flex-1 min-w-0"
+          />
+          <MemoryView
+            :running="emu.running.value"
+            :paused="emu.paused.value"
+            :tick="emu.tick.value"
+            class="flex-1 min-w-0"
+          />
         </div>
       </div>
 
@@ -67,7 +76,10 @@ function onToolbarEvent(event: string, payload?: string) {
         />
         <CpuPanel :cpu="emu.debugInfo.value?.cpu ?? null" />
         <PpuPanel :ppu="emu.debugInfo.value?.ppu ?? null" />
-        <PatternTableView :running="emu.running.value" :tick="emu.tick.value" />
+        <PatternTableView
+          :running="emu.running.value"
+          :tick="emu.tick.value"
+        />
         <BreakpointPanel
           @add="emu.addBreakpoint"
           @remove="emu.removeBreakpoint"

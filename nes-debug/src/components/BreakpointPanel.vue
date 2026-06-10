@@ -1,41 +1,53 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref } from 'vue'
 
 const emit = defineEmits<{
-  add: [type: string, value?: number];
-  remove: [type: string, value?: number];
-}>();
+    add:    [type: string, value?: number];
+    remove: [type: string, value?: number];
+}>()
 
-const bpType = ref("address");
-const bpValue = ref("");
+const bpType = ref('address')
+const bpValue = ref('')
 
 const types = [
-  { value: "address", label: "地址" },
-  { value: "memory_read", label: "内存读" },
-  { value: "memory_write", label: "内存写" },
-  { value: "ppu_scanline", label: "PPU 行" },
-  { value: "vblank", label: "VBlank" },
-];
+    { value: 'address', label: '地址' },
+    { value: 'memory_read', label: '内存读' },
+    { value: 'memory_write', label: '内存写' },
+    { value: 'ppu_scanline', label: 'PPU 行' },
+    { value: 'vblank', label: 'VBlank' },
+]
 
 function addBreakpoint() {
-  const val = bpValue.value.trim();
-  if (bpType.value === "vblank") {
-    emit("add", "vblank");
-  } else if (val) {
-    const num = parseInt(val, val.startsWith("$") ? 16 : 10);
-    if (!isNaN(num)) {
-      emit("add", bpType.value, num);
+    const val = bpValue.value.trim()
+    if (bpType.value === 'vblank') {
+        emit('add', 'vblank')
     }
-  }
+    else if (val) {
+        const num = Number.parseInt(val, val.startsWith('$') ? 16 : 10)
+        if (!Number.isNaN(num)) {
+            emit('add', bpType.value, num)
+        }
+    }
 }
 </script>
 
 <template>
   <div class="panel">
-    <h3 class="panel-title">断点</h3>
+    <h3 class="panel-title">
+      断点
+    </h3>
     <div class="flex gap-1 items-center mb-2">
-      <select v-model="bpType" class="bp-select">
-        <option v-for="t in types" :key="t.value" :value="t.value">{{ t.label }}</option>
+      <select
+        v-model="bpType"
+        class="bp-select"
+      >
+        <option
+          v-for="t in types"
+          :key="t.value"
+          :value="t.value"
+        >
+          {{ t.label }}
+        </option>
       </select>
       <input
         v-model="bpValue"
@@ -43,8 +55,13 @@ function addBreakpoint() {
         placeholder="$0000"
         class="bp-input"
         @keydown.enter="addBreakpoint"
-      />
-      <button class="bp-add-btn" @click="addBreakpoint">+</button>
+      >
+      <button
+        class="bp-add-btn"
+        @click="addBreakpoint"
+      >
+        +
+      </button>
     </div>
     <div class="text-[10px] text-[#555]">
       支持十进制或 $hex 格式

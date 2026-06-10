@@ -1,40 +1,38 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from "vue";
-import type { FrameData } from "../types";
-import { NES_PALETTE } from "../palette";
+import { onMounted, ref, watch } from 'vue'
+import type { FrameData } from '../types'
+import { NES_PALETTE } from '../palette'
 
-const props = defineProps<{
-  frame: FrameData | null;
-}>();
+const props = defineProps<{ frame: FrameData | null; }>()
 
-const canvas = ref<HTMLCanvasElement | null>(null);
+const canvas = ref<HTMLCanvasElement | null>(null)
 
 function renderFrame() {
-  if (!canvas.value || !props.frame) return;
-  const ctx = canvas.value.getContext("2d");
-  if (!ctx) return;
+    if (!canvas.value || !props.frame) return
+    const ctx = canvas.value.getContext('2d')
+    if (!ctx) return
 
-  const { width, height, pixels } = props.frame;
-  const imageData = ctx.createImageData(width, height);
-  const data = imageData.data;
+    const { width, height, pixels } = props.frame
+    const imageData = ctx.createImageData(width, height)
+    const data = imageData.data
 
-  for (let i = 0; i < pixels.length; i++) {
-    const color = NES_PALETTE[pixels[i]!] ?? [0, 0, 0];
-    const j = i * 4;
-    data[j] = color[0];
-    data[j + 1] = color[1];
-    data[j + 2] = color[2];
-    data[j + 3] = 255;
-  }
+    for (let i = 0; i < pixels.length; i++) {
+        const color = NES_PALETTE[pixels[i]!] ?? [0, 0, 0]
+        const j = i * 4
+        data[j] = color[0]
+        data[j + 1] = color[1]
+        data[j + 2] = color[2]
+        data[j + 3] = 255
+    }
 
-  ctx.putImageData(imageData, 0, 0);
+    ctx.putImageData(imageData, 0, 0)
 }
 
-watch(() => props.frame, renderFrame);
+watch(() => props.frame, renderFrame)
 
 onMounted(() => {
-  renderFrame();
-});
+    renderFrame()
+})
 </script>
 
 <template>

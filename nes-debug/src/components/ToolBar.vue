@@ -1,21 +1,19 @@
 <script setup lang="ts">
-import { open } from "@tauri-apps/plugin-dialog";
+import { open } from '@tauri-apps/plugin-dialog'
 
 const emit = defineEmits<{
-  loadRom: [path: string];
-  reset: [];
-  stepFrame: [];
-  stepInstruction: [];
-  togglePause: [];
-}>();
+    loadRom:         [path: string];
+    reset:           [];
+    stepFrame:       [];
+    stepInstruction: [];
+    togglePause:     [];
+}>()
 
 async function openRom() {
-  const path = await open({
-    filters: [{ name: "NES ROM", extensions: ["nes"] }],
-  });
-  if (path) {
-    emit("loadRom", path);
-  }
+    const path = await open({ filters: [{ name: 'NES ROM', extensions: ['nes'] }] })
+    if (path) {
+        emit('loadRom', path)
+    }
 }
 </script>
 
@@ -28,10 +26,30 @@ async function openRom() {
       打开 ROM
     </button>
     <div class="w-px h-5 bg-[#0f3460] mx-1" />
-    <button class="toolbar-btn" @click="$emit('reset')">重置</button>
-    <button class="toolbar-btn" @click="$emit('togglePause')">暂停/继续</button>
-    <button class="toolbar-btn" @click="$emit('stepFrame')">逐帧</button>
-    <button class="toolbar-btn" @click="$emit('stepInstruction')">逐指令</button>
+    <button
+      class="toolbar-btn"
+      @click="$emit('reset')"
+    >
+      重置
+    </button>
+    <button
+      class="toolbar-btn"
+      @click="$emit('togglePause')"
+    >
+      暂停/继续
+    </button>
+    <button
+      class="toolbar-btn"
+      @click="$emit('stepFrame')"
+    >
+      逐帧
+    </button>
+    <button
+      class="toolbar-btn"
+      @click="$emit('stepInstruction')"
+    >
+      逐指令
+    </button>
   </div>
 </template>
 

@@ -1,27 +1,33 @@
 <script setup lang="ts">
-import type { DisasmResult } from "../types";
+import type { DisasmResult } from '../types'
 
-defineProps<{
-  result: DisasmResult | null;
-}>();
+defineProps<{ result: DisasmResult | null; }>()
 
 function hexAddr(a: number): string {
-  return a.toString(16).toUpperCase().padStart(4, "0");
+    return a.toString(16).toUpperCase()
+        .padStart(4, '0')
 }
 
 function hexBytes(bytes: [number, number, number], len: number): string {
-  const parts: string[] = [];
-  for (let i = 0; i < len; i++) {
-    parts.push(bytes[i].toString(16).toUpperCase().padStart(2, "0"));
-  }
-  return parts.join(" ").padEnd(8);
+    const parts: string[] = []
+    for (let i = 0; i < len; i++) {
+        parts.push(bytes[i].toString(16).toUpperCase()
+            .padStart(2, '0'))
+    }
+
+    return parts.join(' ').padEnd(8)
 }
 </script>
 
 <template>
   <div class="panel">
-    <h3 class="panel-title">Disassembly</h3>
-    <div v-if="result" class="font-mono text-[10px] leading-[16px] overflow-auto max-h-[280px]">
+    <h3 class="panel-title">
+      Disassembly
+    </h3>
+    <div
+      v-if="result"
+      class="font-mono text-[10px] leading-[16px] overflow-auto max-h-[280px]"
+    >
       <div
         v-for="(inst, idx) in result.instructions"
         :key="inst.address"
@@ -34,7 +40,12 @@ function hexBytes(bytes: [number, number, number], len: number): string {
         <span class="operand">{{ inst.operand }}</span>
       </div>
     </div>
-    <div v-else class="text-[#666] text-xs">No data</div>
+    <div
+      v-else
+      class="text-[#666] text-xs"
+    >
+      No data
+    </div>
   </div>
 </template>
 

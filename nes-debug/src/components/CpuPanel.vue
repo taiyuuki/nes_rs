@@ -1,19 +1,23 @@
 <script setup lang="ts">
-import type { CpuInfo } from "../types";
+import type { CpuInfo } from '../types'
 
-defineProps<{
-  cpu: CpuInfo | null;
-}>();
+defineProps<{ cpu: CpuInfo | null; }>()
 
 function hex(value: number, width: number = 2): string {
-  return "$" + value.toString(16).toUpperCase().padStart(width, "0");
+    return `$${value.toString(16).toUpperCase()
+        .padStart(width, '0')}`
 }
 </script>
 
 <template>
   <div class="panel">
-    <h3 class="panel-title">CPU</h3>
-    <div v-if="cpu" class="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
+    <h3 class="panel-title">
+      CPU
+    </h3>
+    <div
+      v-if="cpu"
+      class="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs"
+    >
       <div class="reg-row">
         <span class="reg-label">A</span>
         <span class="reg-value">{{ hex(cpu.a) }}</span>
@@ -35,7 +39,10 @@ function hex(value: number, width: number = 2): string {
         <span class="reg-value text-[#4fc3f7]">{{ hex(cpu.pc, 4) }}</span>
       </div>
     </div>
-    <div v-if="cpu" class="mt-2 text-xs">
+    <div
+      v-if="cpu"
+      class="mt-2 text-xs"
+    >
       <div class="flex gap-1 font-mono">
         <span :class="cpu.status & 0x80 ? 'flag-on' : 'flag-off'">N</span>
         <span :class="cpu.status & 0x40 ? 'flag-on' : 'flag-off'">V</span>
@@ -56,7 +63,12 @@ function hex(value: number, width: number = 2): string {
         <span :class="cpu.nmi_line ? 'text-[#ffd93d]' : 'text-[#555]'">NMI</span>
       </div>
     </div>
-    <div v-else class="text-[#666] text-xs">No data</div>
+    <div
+      v-else
+      class="text-[#666] text-xs"
+    >
+      No data
+    </div>
   </div>
 </template>
 
