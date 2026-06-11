@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import type { FrameData } from '../types'
-import { PALETTE_LUT } from '../palette'
 
 const props = defineProps<{ frame: FrameData | null; }>()
 
@@ -22,18 +21,8 @@ function renderFrame() {
     if (!ctx) return
 
     const { width, height, pixels_b64 } = props.frame
-    const pixels = b64ToBytes(pixels_b64)
     const imageData = ctx.createImageData(width, height)
-    const data = imageData.data
-    const len = pixels.length
-    for (let i = 0; i < len; i++) {
-        const offset = (pixels[i]! & 0x3F) << 2
-        const j = i << 2
-        data[j] = PALETTE_LUT[offset]
-        data[j + 1] = PALETTE_LUT[offset + 1]
-        data[j + 2] = PALETTE_LUT[offset + 2]
-        data[j + 3] = 255
-    }
+    imageData.data.set(b64ToBytes(pixels_b64))
     ctx.putImageData(imageData, 0, 0)
 }
 

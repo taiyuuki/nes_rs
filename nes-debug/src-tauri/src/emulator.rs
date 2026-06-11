@@ -132,10 +132,11 @@ pub fn run_frame(controller: u8, window: tauri::Window) -> Result<RunFrameResult
         let debug_info = debug_info_from_snapshot(&snap);
 
         let video = snap.video;
+        let rgba = nes_sim::video::frame_to_rgba(video);
         let frame = FrameData {
             width: video.width,
             height: video.height,
-            pixels_b64: STANDARD.encode(video.pixels),
+            pixels_b64: STANDARD.encode(&rgba),
         };
 
         let audio_samples = rt.nes().apu_audio_samples();
@@ -176,10 +177,11 @@ pub fn get_debug_info() -> Result<DebugInfo, String> {
 pub fn get_frame() -> Result<FrameData, String> {
     with_runtime(|rt| {
         let video = rt.snapshot().video;
+        let rgba = nes_sim::video::frame_to_rgba(video);
         Ok(FrameData {
             width: video.width,
             height: video.height,
-            pixels_b64: STANDARD.encode(video.pixels),
+            pixels_b64: STANDARD.encode(&rgba),
         })
     })
 }

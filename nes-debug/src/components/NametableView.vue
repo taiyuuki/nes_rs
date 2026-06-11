@@ -142,7 +142,7 @@ const tableNames = ['$2000', '$2400', '$2800', '$2C00']
 }
 .nametable-canvas {
   image-rendering: pixelated;
-  image-rendering: crisp-edges;
+  /* image-rendering: crisp-edges; */
   width: 100%;
   height: auto;
   background: #181818;

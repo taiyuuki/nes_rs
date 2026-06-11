@@ -121,7 +121,8 @@ impl NES {
 
             #[cfg(feature = "debug")]
             {
-                self.bus.set_debug_mem_breakpoints(&self.cached_mem_breakpoints);
+                self.bus
+                    .set_debug_mem_breakpoints(&self.cached_mem_breakpoints);
             }
 
             self.cpu.clock(&mut self.bus);
@@ -353,9 +354,7 @@ impl NES {
             .breakpoints
             .iter()
             .copied()
-            .filter(|bp| {
-                matches!(bp, Breakpoint::MemoryRead(_) | Breakpoint::MemoryWrite(_))
-            })
+            .filter(|bp| matches!(bp, Breakpoint::MemoryRead(_) | Breakpoint::MemoryWrite(_)))
             .collect();
     }
 
